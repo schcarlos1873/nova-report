@@ -1,0 +1,745 @@
+{
+  "$schema": "https://novareport.io/schemas/v1/report.json",
+  "schemaVersion": "1.0",
+  "meta": {
+    "title": "Produção de Jumbos",
+    "paperSize": "A4",
+    "orientation": "landscape",
+    "margins": {
+      "top": 10.0,
+      "bottom": 10.0,
+      "left": 15.0,
+      "right": 15.0
+    }
+  },
+  "dataSources": [
+    {
+      "id": "Dbmesqas",
+      "provider": "mssql",
+      "connectionRef": "dbmesqas",
+      "options": {
+        "path": ""
+      },
+      "queries": [
+        {
+          "name": "ProdReel",
+          "sql": "select mm.Code MachineId, pr.ReelNum, pr.TurnupDateBegin, pr.TurnupDateEnd, pr.WeightTurnup, pr.WidthTurnup,\npr.DiameterTurnup, pr.CreatedBy  \nfrom ProdReel pr \ninner join MastMachine mm on pr.MachineId  = mm.Id\nwhere pr.TurnupDateBegin >= :BeginDate and pr.TurnupDateEnd <= :EndDate"
+        }
+      ]
+    }
+  ],
+  "parameters": [
+    {
+      "name": "BeginDate",
+      "type": "date",
+      "label": "Data Inicial:",
+      "required": true,
+      "defaultValue": "2026-10-01"
+    },
+    {
+      "name": "EndDate",
+      "type": "date",
+      "label": "Data Final",
+      "required": false,
+      "defaultValue": "2026-10-05"
+    }
+  ],
+  "groups": [
+    {
+      "name": "Maquina",
+      "expression": "Fields.MachineId",
+      "pageBreakBetween": true
+    }
+  ],
+  "bands": [
+    {
+      "id": "report_header_1",
+      "type": "reportHeader",
+      "height": 19.0,
+      "elements": [
+        {
+          "id": "img_1",
+          "type": "image",
+          "source": "/Users/carlos/projetos/nova-report/examples/logo.svg",
+          "fit": "contain",
+          "x": 3.0,
+          "y": 1.5,
+          "width": 36.0,
+          "height": 15.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "lin_1",
+          "type": "line",
+          "direction": "horizontal",
+          "x": 3.8,
+          "y": 17.3,
+          "width": 262.0,
+          "height": 0.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.5,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_1",
+          "type": "expression",
+          "expression": "\"Período: \" + FORMAT_DATE(Params.BeginDate, '%d/%m/%Y') + \" a \" + FORMAT_DATE(Params.EndDate, '%d/%m/%Y')",
+          "x": 47.400000000000006,
+          "y": 10.0,
+          "width": 212.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_1",
+          "type": "label",
+          "text": "Produção de Jumbo",
+          "x": 74.0,
+          "y": 1.5,
+          "width": 185.0,
+          "height": 7.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 16.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "page_header_1",
+      "type": "pageHeader",
+      "height": 5.0,
+      "elements": []
+    },
+    {
+      "id": "group_header_1",
+      "type": "groupHeader",
+      "height": 12.0,
+      "group": "Maquina",
+      "elements": [
+        {
+          "id": "fld_2",
+          "type": "expression",
+          "expression": "Fields.MachineId",
+          "x": 1.0,
+          "y": 0.0,
+          "width": 40.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#0061ff",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_2",
+          "type": "label",
+          "text": "Jumbo",
+          "x": 0.0,
+          "y": 5.0,
+          "width": 35.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#d6d6d6",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_3",
+          "type": "label",
+          "text": "Data Inicial",
+          "x": 35.0,
+          "y": 5.0,
+          "width": 40.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#d6d6d6",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_4",
+          "type": "label",
+          "text": "Data Final",
+          "x": 75.0,
+          "y": 5.0,
+          "width": 40.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#d6d6d6",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_5",
+          "type": "label",
+          "text": "Data Final",
+          "x": 115.0,
+          "y": 5.0,
+          "width": 29.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#d6d6d6",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_6",
+          "type": "label",
+          "text": "Diametro",
+          "x": 144.0,
+          "y": 5.0,
+          "width": 25.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#d6d6d6",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_7",
+          "type": "label",
+          "text": "Peso (kg)",
+          "x": 169.0,
+          "y": 5.0,
+          "width": 29.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#d6d6d6",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_8",
+          "type": "label",
+          "text": "Criado Por",
+          "x": 198.0,
+          "y": 5.0,
+          "width": 68.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#d6d6d6",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "detail_1",
+      "type": "detail",
+      "height": 7.0,
+      "elements": [
+        {
+          "id": "fld_5",
+          "type": "expression",
+          "expression": "Fields.ReelNum",
+          "x": 0.0,
+          "y": 0.0,
+          "width": 34.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_8",
+          "type": "expression",
+          "expression": "Fields.WidthTurnup",
+          "x": 121.0,
+          "y": 0.0,
+          "width": 23.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_6",
+          "type": "expression",
+          "expression": "Fields.TurnupDateBegin",
+          "x": 37.0,
+          "y": 0.0,
+          "width": 40.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_7",
+          "type": "expression",
+          "expression": "Fields.TurnupDateEnd",
+          "x": 79.0,
+          "y": 0.0,
+          "width": 40.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_9",
+          "type": "expression",
+          "expression": "Fields.DiameterTurnup",
+          "x": 149.0,
+          "y": 0.0,
+          "width": 23.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_10",
+          "type": "expression",
+          "expression": "Fields.WeightTurnup",
+          "x": 174.0,
+          "y": 0.0,
+          "width": 23.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_11",
+          "type": "expression",
+          "expression": "Fields.CreatedBy",
+          "x": 200.0,
+          "y": 0.0,
+          "width": 64.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "group_footer_1",
+      "type": "groupFooter",
+      "height": 8.0,
+      "group": "Maquina",
+      "elements": [
+        {
+          "id": "fld_12",
+          "type": "expression",
+          "expression": "SUM(\"WeightTurnup\")",
+          "x": 174.0,
+          "y": 2.0,
+          "width": 23.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "lin_2",
+          "type": "line",
+          "direction": "horizontal",
+          "x": 0.30000000000000004,
+          "y": 0.6000000000000001,
+          "width": 266.0,
+          "height": 0.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.5,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_9",
+          "type": "label",
+          "text": "Total",
+          "x": 0.30000000000000004,
+          "y": 1.0,
+          "width": 29.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "bottom",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_13",
+          "type": "expression",
+          "expression": "MIN(\"TurnupDateBegin\")",
+          "x": 37.0,
+          "y": 2.0,
+          "width": 40.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_14",
+          "type": "expression",
+          "expression": "MAX(\"TurnupDateEnd\")",
+          "x": 79.0,
+          "y": 2.0,
+          "width": 40.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_15",
+          "type": "expression",
+          "expression": "AVG(\"WidthTurnup\")",
+          "x": 121.0,
+          "y": 2.0,
+          "width": 23.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_16",
+          "type": "expression",
+          "expression": "AVG(\"DiameterTurnup\")",
+          "x": 149.0,
+          "y": 2.0,
+          "width": 23.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "page_footer_1",
+      "type": "pageFooter",
+      "height": 10.0,
+      "elements": [
+        {
+          "id": "rct_1",
+          "type": "rectangle",
+          "radius": 0.0,
+          "x": 0.4,
+          "y": 0.5,
+          "width": 266.0,
+          "height": 8.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.5,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_4",
+          "type": "expression",
+          "expression": "PAGE_NUMBER() + \"/\" +  TOTAL_PAGES()",
+          "x": 103.0,
+          "y": 2.0,
+          "width": 40.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_3",
+          "type": "expression",
+          "expression": "FORMAT_DATE(NOW(), \"%d/%m/%Y %H:%M:%S\")",
+          "x": 208.0,
+          "y": 2.0,
+          "width": 54.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+// Contrato Tier 3 — conectores sidecar (Rust, Go, Python, C#...) via gRPC.
+// Status: contrato definido; o cliente Tonic ainda não está implementado nesta versão.
+syntax = "proto3";
+package novareport.connectors.v1;
+
+service ConnectorPlugin {
+  rpc TestConnection (ConnectionRequest) returns (TestResponse);
+  rpc IntrospectSchema (IntrospectRequest) returns (SchemaResponse);
+  rpc ExecuteQuery (QueryRequest) returns (stream ArrowRecordBatchChunk);
+}
+
+message ConnectionRequest {
+  string driver_id = 1;
+  map<string, string> config = 2;
+}
+
+message TestResponse {
+  bool success = 1;
+  uint64 latency_ms = 2;
+  string error_message = 3;
+}
+
+message IntrospectRequest {
+  map<string, string> config = 1;
+  string target_schema = 2;
+}
+
+message ColumnInfo {
+  string name = 1;
+  string native_type = 2;
+  string arrow_type = 3;
+  bool nullable = 4;
+  bool is_pk = 5;
+}
+
+message TableInfo {
+  string schema = 1;
+  string name = 2;
+  string kind = 3; // TABLE, VIEW, STORED_PROCEDURE
+  repeated ColumnInfo columns = 4;
+}
+
+message SchemaResponse {
+  repeated TableInfo tables = 1;
+}
+
+message QueryRequest {
+  map<string, string> config = 1;
+  string query = 2;
+  map<string, string> parameters = 3;
+}
+
+message ArrowRecordBatchChunk {
+  bytes arrow_ipc_bytes = 1; // Apache Arrow IPC stream (zero-copy)
+}

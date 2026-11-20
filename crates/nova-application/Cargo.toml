@@ -1,0 +1,22 @@
+[package]
+name = "nova-application"
+description = "NovaReport application layer: use cases orchestrating domain, engine and ports"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nova-domain.workspace = true
+nova-engine.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+polars.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

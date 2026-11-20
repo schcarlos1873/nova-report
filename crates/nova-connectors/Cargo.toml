@@ -1,0 +1,42 @@
+[package]
+name = "nova-connectors"
+description = "report-connectors: unified data access layer (native drivers, ODBC, files, REST) for NovaReport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["postgres", "mysql", "mssql", "rest"]
+postgres = ["dep:sqlx", "sqlx/postgres"]
+mysql = ["dep:sqlx", "sqlx/mysql"]
+mssql = ["dep:tiberius", "dep:tokio-util"]
+rest = ["dep:reqwest"]
+# Ponte ODBC (Oracle, DB2, SAP HANA, Firebird...). Requer unixODBC/iODBC instalado.
+odbc = ["dep:odbc-api"]
+# Cofre nativo do SO (Keychain / Credential Manager / Secret Service).
+os-keyring = ["dep:keyring"]
+
+[dependencies]
+nova-domain.workspace = true
+nova-engine.workspace = true
+nova-application.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+polars = { workspace = true, features = ["sql"] }
+rusqlite = { version = "0.32", features = ["bundled", "column_decltype"] }
+sqlx = { version = "0.8.6", optional = true, default-features = false, features = ["runtime-tokio", "tls-rustls", "chrono", "rust_decimal"] }
+rust_decimal = "1"
+tiberius = { version = "0.12", optional = true, default-features = false, features = ["tds73", "chrono", "rustls", "rust_decimal"] }
+tokio-util = { version = "0.7", optional = true, features = ["compat"] }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls"] }
+odbc-api = { version = "13", optional = true }
+keyring = { version = "3", optional = true, features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+[dev-dependencies]
+tokio = { workspace = true }
+rusqlite = { version = "0.32", features = ["bundled"] }

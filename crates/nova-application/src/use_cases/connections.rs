@@ -1,0 +1,160 @@
+//! Caso de uso: gerenciamento de conexões, navegação de schema e pré-visualização de dados.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Instant;
+
+use nova_domain::ParamValue;
+use nova_domain::connection::{ConnectionConfig, ConnectionProfile, DatabaseTree};
+use nova_domain::report::ReportDefinition;
+use nova_engine::data::CellValue;
+use serde::Serialize;
+
+use crate::connection_resolver::ConnectionResolver;
+use crate::ports::{ConnectorGateway, DriverDescriptor};
+use crate::{AppError, AppResult, params};
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewColumn {
+    pub name: String,
+    pub data_type: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryPreview {
+    pub columns: Vec<PreviewColumn>,
+    pub rows: Vec<Vec<CellValue>>,
+    pub elapsed_ms: u128,
+}
+
+#[derive(Clone)]
+pub struct ConnectionService {
+    gateway: Arc<dyn ConnectorGateway>,
+    resolver: ConnectionResolver,
+}
+
+impl ConnectionService {
+    pub fn new(gateway: Arc<dyn ConnectorGateway>, resolver: ConnectionResolver) -> Self {
+        Self { gateway, resolver }
+    }
+
+    pub fn drivers(&self) -> Vec<DriverDescriptor> {
+        self.gateway.drivers()
+    }
+
+    pub fn list(&self) -> AppResult<Vec<ConnectionProfile>> {
+        Ok(self.resolver.profiles().list()?)
+    }
+
+    /// Salva o perfil; a senha (se informada) vai para o cofre do SO. `Some("")` remove a senha.
+    pub fn save(&self, profile: ConnectionProfile, password: Option<String>) -> AppResult<()> {
+        if profile.alias.trim().is_empty() {
+            return Err(AppError::Invalid("o alias da conexão é obrigatório".into()));
+        }
+        if let Some(cs) = &profile.connection_string {
+            let lower = cs.to_lowercase();
+            if ["password=", "pwd="].iter().any(|k| lower.contains(k) && !lower.contains("{password}")) {
+                return Err(AppError::Invalid(
+                    "a connection string não deve conter a senha; use o campo senha e o marcador {PASSWORD}".into(),
+                ));
+            }
+        }
+        match password.as_deref() {
+            Some("") => self.resolver.vault().delete(&profile.alias)?,
+            Some(pw) => self.resolver.vault().store(&profile.alias, pw)?,
+            None => {}
+        }
+        self.resolver.profiles().save(profile)?;
+        Ok(())
+    }
+
+    pub fn delete(&self, alias: &str) -> AppResult<()> {
+        self.resolver.vault().delete(alias)?;
+        Ok(self.resolver.profiles().delete(alias)?)
+    }
+
+    /// Testa um perfil ainda não salvo (senha opcional; senão usa o cofre).
+    pub async fn test(&self, profile: ConnectionProfile, password: Option<String>) -> AppResult<u64> {
+        let password = match password {
+            Some(p) if !p.is_empty() => Some(p),
+            _ => self.resolver.vault().get(&profile.alias)?,
+        };
+        self.gateway.test_connection(&ConnectionConfig::new(profile, password)).await
+    }
+
+    pub async fn schema(&self, alias: &str) -> AppResult<DatabaseTree> {
+        self.gateway.introspect(&self.resolver.by_alias(alias)?).await
+    }
+
+    pub fn select_all_sql(&self, alias: &str, schema: Option<&str>, table: &str) -> AppResult<String> {
+        let cfg = self.resolver.by_alias(alias)?;
+        Ok(self.gateway.select_all(cfg.profile.provider, schema, table))
+    }
+
+    /// Executa uma query ad-hoc em uma conexão salva (limitada a `limit` linhas).
+    pub async fn preview_sql(
+        &self,
+        alias: &str,
+        sql: &str,
+        raw_params: &HashMap<String, serde_json::Value>,
+        limit: usize,
+    ) -> AppResult<QueryPreview> {
+        let cfg = self.resolver.by_alias(alias)?;
+        let params = raw_params.iter().map(|(k, v)| (k.clone(), json_param(v))).collect();
+        self.run_preview(cfg, sql, params, limit).await
+    }
+
+    /// Executa uma query declarada no relatório (usada para descobrir campos no designer).
+    pub async fn preview_report_query(
+        &self,
+        def: &ReportDefinition,
+        query_name: &str,
+        raw_params: &HashMap<String, serde_json::Value>,
+        base_dir: Option<&std::path::Path>,
+        limit: usize,
+    ) -> AppResult<QueryPreview> {
+        let (ds, q) = def.find_query(query_name).ok_or_else(|| AppError::Invalid(format!("query '{query_name}' não existe")))?;
+        let cfg = self.resolver.for_data_source(ds, base_dir)?;
+        let params = params::resolve(def, raw_params).or_else(|_| {
+            // no designer, parâmetros obrigatórios podem estar vazios: usa nulos
+            Ok::<_, AppError>(def.parameters.iter().map(|p| (p.name.clone(), ParamValue::Null)).collect())
+        })?;
+        self.run_preview(cfg, &q.sql, params, limit).await
+    }
+
+    async fn run_preview(&self, cfg: ConnectionConfig, sql: &str, params: HashMap<String, ParamValue>, limit: usize) -> AppResult<QueryPreview> {
+        let kind = cfg.profile.provider;
+        let sql = if kind.is_sql() { self.gateway.paginate(kind, sql, limit) } else { sql.to_string() };
+        let provider = self.gateway.provider(cfg)?;
+        let start = Instant::now();
+        let df = provider.execute_query(&sql, &params).await?;
+        let elapsed_ms = start.elapsed().as_millis();
+        let df = df.head(Some(limit));
+        let columns = df
+            .columns()
+            .iter()
+            .map(|c| PreviewColumn { name: c.name().to_string(), data_type: c.dtype().to_string() })
+            .collect();
+        let mut rows = Vec::with_capacity(df.height());
+        for r in 0..df.height() {
+            let mut row = Vec::with_capacity(df.width());
+            for c in df.columns() {
+                row.push(c.get(r).map(|v| CellValue::from_any(&v)).unwrap_or(CellValue::Null));
+            }
+            rows.push(row);
+        }
+        Ok(QueryPreview { columns, rows, elapsed_ms })
+    }
+}
+
+fn json_param(v: &serde_json::Value) -> ParamValue {
+    match v {
+        serde_json::Value::Null => ParamValue::Null,
+        serde_json::Value::Bool(b) => ParamValue::Bool(*b),
+        serde_json::Value::Number(n) => n.as_i64().map(ParamValue::Int).unwrap_or_else(|| ParamValue::Float(n.as_f64().unwrap_or(0.0))),
+        serde_json::Value::String(s) => ParamValue::Text(s.clone()),
+        other => ParamValue::Text(other.to_string()),
+    }
+}

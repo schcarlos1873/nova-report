@@ -1,0 +1,12 @@
+[package]
+name = "nova-domain"
+description = "NovaReport domain model: .nrep aggregate, value objects and ports"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
