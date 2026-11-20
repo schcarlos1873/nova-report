@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use nova_application::ports::DriverDescriptor;
-use nova_application::{AppError, ExportFormat, PreviewResult, QueryPreview};
+use nova_application::{AppError, ExportFormat, ParameterValues, PreviewResult, QueryPreview};
 use nova_domain::connection::{ConnectionProfile, DatabaseTree};
 use nova_domain::report::{ReportDefinition, ValidationIssue};
 use serde::Serialize;
@@ -148,5 +148,21 @@ pub async fn preview_report_query(
     state
         .connections
         .preview_report_query(&report, &query_name, &params.unwrap_or_default(), base_dir(&report_path).as_deref(), limit.unwrap_or(100))
+        .await
+}
+
+/// Lista de valores de um parâmetro (filtros em cascata), já respeitando `dependsOn`.
+#[tauri::command]
+pub async fn parameter_values(
+    state: State<'_, AppState>,
+    report: ReportDefinition,
+    name: String,
+    params: Option<Params>,
+    report_path: Option<String>,
+    limit: Option<usize>,
+) -> CmdResult<ParameterValues> {
+    state
+        .connections
+        .parameter_values(&report, &name, &params.unwrap_or_default(), base_dir(&report_path).as_deref(), limit.unwrap_or(1000))
         .await
 }

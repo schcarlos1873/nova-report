@@ -2,14 +2,15 @@
 //!
 //! Variáveis disponíveis nas expressões:
 //! * `Fields.<coluna>` — linha corrente do dataset;
-//! * `Params.<nome>` — parâmetros do relatório;
+//! * `Params.<nome>` — parâmetros do relatório (array quando o parâmetro aceita vários valores);
 //! * `Group.Sum_<coluna>` / `Group.Count` — agregados do escopo atual (grupo ou relatório);
 //! * `Report.Title`, `Report.RecordCount`;
 //! * `Format.currency(v, "BRL")`, `Format.number(v, 2)`, `Format.percent(v, 1)`, `Format.date(v, fmt)`.
 //!
 //! Funções: `SUM`, `AVG`, `MIN`, `MAX`, `COUNT`, `DISTINCT_COUNT`, `RUNNING_SUM`, `IIF`/`IFF`,
 //! `FORMAT_DATE`, `FormatBRL`, `ROUND`, `ABS`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `LEN`,
-//! `ISNULL`, `COALESCE`, `TO_NUMBER`, `TODAY`, `NOW`, `RECORD_NUMBER`, `PAGE_NUMBER`, `TOTAL_PAGES`.
+//! `ISNULL`, `COALESCE`, `TO_NUMBER`, `TODAY`, `NOW`, `RECORD_NUMBER`, `PAGE_NUMBER`, `TOTAL_PAGES`,
+//! `JOIN(lista, separador)` e `CONTAINS(lista, valor)` para parâmetros de vários valores.
 
 pub mod format;
 mod preprocess;
@@ -311,6 +312,7 @@ fn param_to_dynamic(v: &ParamValue) -> Dynamic {
         ParamValue::Float(f) => (*f).into(),
         ParamValue::Bool(b) => (*b).into(),
         ParamValue::Null => Dynamic::UNIT,
+        ParamValue::List(v) => Dynamic::from_array(v.iter().map(param_to_dynamic).collect()),
         other => other.to_text().into(),
     }
 }
@@ -387,6 +389,20 @@ fn register_builtins(engine: &mut Engine, state: &Rc<RefCell<EvalState>>) {
     engine.register_fn("LOWER", |v: Dynamic| dynamic_to_string(&v).to_lowercase());
     engine.register_fn("TRIM", |v: Dynamic| dynamic_to_string(&v).trim().to_string());
     engine.register_fn("LEN", |v: Dynamic| dynamic_to_string(&v).chars().count() as i64);
+    // ---- parâmetros de vários valores
+    engine.register_fn("JOIN", |v: Dynamic, sep: &str| -> String {
+        match v.into_array() {
+            Ok(a) => a.iter().map(dynamic_to_string).collect::<Vec<_>>().join(sep),
+            Err(_) => String::new(),
+        }
+    });
+    engine.register_fn("CONTAINS", |list: Dynamic, item: Dynamic| -> bool {
+        let needle = dynamic_to_string(&item);
+        match list.into_array() {
+            Ok(a) => a.iter().any(|x| dynamic_to_string(x) == needle),
+            Err(_) => false,
+        }
+    });
     engine.register_fn("LEFT", |v: Dynamic, n: i64| -> ImmutableString {
         dynamic_to_string(&v).chars().take(n.max(0) as usize).collect::<String>().into()
     });

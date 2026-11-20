@@ -6,6 +6,7 @@ import type {
   DatabaseTree,
   DriverDescriptor,
   ExportFormat,
+  ParameterValues,
   PreviewResult,
   QueryPreview,
   ReportDefinition,
@@ -40,4 +41,6 @@ export const api = {
   previewSql: (alias: string, sql: string, params?: Params, limit = 100) => call<QueryPreview>('preview_sql', { alias, sql, params, limit }),
   previewReportQuery: (report: ReportDefinition, queryName: string, params?: Params, reportPath?: string, limit = 100) =>
     call<QueryPreview>('preview_report_query', { report, queryName, params, reportPath, limit }),
+  parameterValues: (report: ReportDefinition, name: string, params: Params, reportPath?: string, limit?: number) =>
+    call<ParameterValues>('parameter_values', { report, name, params, reportPath, limit }),
 };

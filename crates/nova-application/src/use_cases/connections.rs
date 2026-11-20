@@ -23,6 +23,23 @@ pub struct PreviewColumn {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ParameterOption {
+    pub value: serde_json::Value,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParameterValues {
+    pub values: Vec<ParameterOption>,
+    /// A query devolveu mais linhas que o limite.
+    pub truncated: bool,
+    /// Rótulos dos parâmetros de `dependsOn` ainda sem valor.
+    pub waiting_for: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QueryPreview {
     pub columns: Vec<PreviewColumn>,
     pub rows: Vec<Vec<CellValue>>,
@@ -117,11 +134,62 @@ impl ConnectionService {
     ) -> AppResult<QueryPreview> {
         let (ds, q) = def.find_query(query_name).ok_or_else(|| AppError::Invalid(format!("query '{query_name}' não existe")))?;
         let cfg = self.resolver.for_data_source(ds, base_dir)?;
-        let params = params::resolve(def, raw_params).or_else(|_| {
-            // no designer, parâmetros obrigatórios podem estar vazios: usa nulos
-            Ok::<_, AppError>(def.parameters.iter().map(|p| (p.name.clone(), ParamValue::Null)).collect())
-        })?;
+        // no designer, parâmetros obrigatórios podem estar vazios: os preenchidos continuam valendo
+        let params = params::resolve_lenient(def, raw_params);
         self.run_preview(cfg, &q.sql, params, limit).await
+    }
+
+    /// Lista de valores de um parâmetro com `availableValues` (filtros em cascata).
+    /// Enquanto algum parâmetro de `dependsOn` estiver vazio, devolve `waitingFor` sem consultar o banco.
+    pub async fn parameter_values(
+        &self,
+        def: &ReportDefinition,
+        name: &str,
+        raw_params: &HashMap<String, serde_json::Value>,
+        base_dir: Option<&std::path::Path>,
+        limit: usize,
+    ) -> AppResult<ParameterValues> {
+        let p = def.parameters.iter().find(|p| p.name == name).ok_or_else(|| AppError::Invalid(format!("parâmetro '{name}' não existe")))?;
+        let av = p.available_values.as_ref().ok_or_else(|| AppError::Invalid(format!("parâmetro '{name}' não tem lista de valores")))?;
+        let params = params::resolve_lenient(def, raw_params);
+        let waiting_for: Vec<String> = p
+            .depends_on
+            .iter()
+            .filter(|d| params.get(*d).is_none_or(ParamValue::is_empty))
+            .map(|d| def.parameters.iter().find(|x| &x.name == d).map_or(d.clone(), |x| if x.label.is_empty() { x.name.clone() } else { x.label.clone() }))
+            .collect();
+        if !waiting_for.is_empty() {
+            return Ok(ParameterValues { values: vec![], truncated: false, waiting_for });
+        }
+
+        let (ds, q) = def.find_query(&av.query).ok_or_else(|| AppError::Invalid(format!("query '{}' não existe", av.query)))?;
+        let cfg = self.resolver.for_data_source(ds, base_dir)?;
+        let preview = self.run_preview(cfg, &q.sql, params, limit + 1).await?;
+        let col = |field: &str| {
+            preview.columns.iter().position(|c| c.name.eq_ignore_ascii_case(field)).ok_or_else(|| {
+                let found: Vec<&str> = preview.columns.iter().map(|c| c.name.as_str()).collect();
+                AppError::Invalid(format!("a query '{}' não tem a coluna '{field}' (colunas: {})", q.name, found.join(", ")))
+            })
+        };
+        let vi = col(&av.value_field)?;
+        let li = av.label_field.as_deref().filter(|f| !f.is_empty()).map(col).transpose()?.unwrap_or(vi);
+
+        let truncated = preview.rows.len() > limit;
+        let mut values: Vec<ParameterOption> = Vec::new();
+        for row in preview.rows.iter().take(limit) {
+            let cell = &row[vi];
+            if *cell == CellValue::Null {
+                continue;
+            }
+            // mesmo tipo que o relatório vai receber (ex.: Id inteiro de um parâmetro `int`)
+            let raw = serde_json::to_value(cell).unwrap_or(serde_json::Value::Null);
+            let value = ParamValue::coerce(&p.name, p.param_type, &raw).map_err(AppError::from)?.to_json();
+            if values.iter().any(|o| o.value == value) {
+                continue;
+            }
+            values.push(ParameterOption { value, label: row[li].to_display() });
+        }
+        Ok(ParameterValues { values, truncated, waiting_for: vec![] })
     }
 
     async fn run_preview(&self, cfg: ConnectionConfig, sql: &str, params: HashMap<String, ParamValue>, limit: usize) -> AppResult<QueryPreview> {

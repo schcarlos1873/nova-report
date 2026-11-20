@@ -21,8 +21,6 @@ const PARAM_TYPES: { value: ParamType; label: string }[] = [
 
 export function DataPanel() {
   const report = useReport((s) => s.report);
-  const update = useReport((s) => s.update);
-  const edit = (key: string, recipe: (d: Draft<ReportDefinition>) => void) => update(recipe, key);
 
   return (
     <div className="data-panel">
@@ -48,28 +46,143 @@ export function DataPanel() {
           </button>
         }
       >
-        {report.parameters.map((p, i) => (
-          <div key={i} className="card">
-            <div className="row">
-              <TextInput value={p.name} mono onCommit={(v) => edit(`p${i}.n`, (d) => void (d.parameters[i].name = v.replace(/[^A-Za-z0-9_]/g, '_')))} />
-              <Select value={p.type} options={PARAM_TYPES} onChange={(v) => edit(`p${i}.t`, (d) => void (d.parameters[i].type = v))} />
-              <button className="icon-btn" title="Remover" onClick={() => edit('p.rm', (d) => void d.parameters.splice(i, 1))}>×</button>
-            </div>
-            <div className="row">
-              <TextInput value={p.label} placeholder="Rótulo" onCommit={(v) => edit(`p${i}.l`, (d) => void (d.parameters[i].label = v))} />
-              <TextInput
-                value={p.defaultValue === undefined ? '' : String(p.defaultValue)}
-                placeholder="padrão (ex.: today)"
-                onCommit={(v) => edit(`p${i}.d`, (d) => void (d.parameters[i].defaultValue = v === '' ? undefined : v))}
-              />
-            </div>
-            <Toggle label="Obrigatório" checked={p.required} onChange={(v) => edit(`p${i}.r`, (d) => void (d.parameters[i].required = v))} />
-            <p className="muted small mono">:{p.name} na SQL · Params.{p.name} nas expressões</p>
-          </div>
-        ))}
+        {report.parameters.map((_, i) => <ParamCard key={i} index={i} />)}
       </Section>
 
       <GroupsSection />
+    </div>
+  );
+}
+
+function ParamCard({ index: i }: { index: number }) {
+  const report = useReport((s) => s.report);
+  const update = useReport((s) => s.update);
+  const fields = useUi((s) => s.fields);
+  const p = report.parameters[i];
+  const edit = (key: string, recipe: (d: Draft<ReportDefinition>) => void) => update(recipe, `p${i}.${key}`);
+  const queries = report.dataSources.flatMap((d) => d.queries.map((q) => q.name));
+  const others = report.parameters.filter((x) => x.name !== p.name);
+  const av = p.availableValues;
+  const known = av ? fields[av.query] ?? [] : [];
+  const shownDefault = p.defaultValue === undefined ? '' : Array.isArray(p.defaultValue) ? p.defaultValue.join(',') : String(p.defaultValue);
+
+  return (
+    <div className="card">
+      <div className="row">
+        <TextInput
+          value={p.name}
+          mono
+          onCommit={(v) =>
+            edit('n', (d) => {
+              const name = v.replace(/[^A-Za-z0-9_]/g, '_');
+              const old = d.parameters[i].name;
+              d.parameters[i].name = name;
+              // mantém as dependências em cascata apontando para o novo nome
+              for (const x of d.parameters) if (x.dependsOn) x.dependsOn = x.dependsOn.map((n) => (n === old ? name : n));
+            })
+          }
+        />
+        <Select value={p.type} options={PARAM_TYPES} onChange={(v) => edit('t', (d) => void (d.parameters[i].type = v))} />
+        <button
+          className="icon-btn"
+          title="Remover"
+          onClick={() =>
+            update((d) => {
+              const [gone] = d.parameters.splice(i, 1);
+              for (const x of d.parameters) {
+                if (!x.dependsOn) continue;
+                x.dependsOn = x.dependsOn.filter((n) => n !== gone.name);
+                if (!x.dependsOn.length) delete x.dependsOn;
+              }
+            })
+          }
+        >
+          ×
+        </button>
+      </div>
+      <div className="row">
+        <TextInput value={p.label} placeholder="Rótulo" onCommit={(v) => edit('l', (d) => void (d.parameters[i].label = v))} />
+        <TextInput
+          value={shownDefault}
+          placeholder={p.multiValue ? 'padrão (ex.: 1,2,3)' : 'padrão (ex.: today)'}
+          onCommit={(v) => edit('d', (d) => void (d.parameters[i].defaultValue = v === '' ? undefined : v))}
+        />
+      </div>
+      <div className="row gap">
+        <Toggle label="Obrigatório" checked={p.required} onChange={(v) => edit('r', (d) => void (d.parameters[i].required = v))} />
+        <Toggle
+          label="Vários valores"
+          checked={!!p.multiValue}
+          onChange={(v) => edit('mv', (d) => {
+            if (v) d.parameters[i].multiValue = true;
+            else delete d.parameters[i].multiValue;
+          })}
+        />
+      </div>
+      <Field label="Lista de valores" hint="Query do relatório que fornece os valores permitidos">
+        <Select
+          value={av?.query ?? ''}
+          options={[{ value: '', label: '(digitação livre)' }, ...queries.map((q) => ({ value: q, label: q }))]}
+          onChange={(q) =>
+            edit('av', (d) => {
+              const prm = d.parameters[i];
+              if (!q) {
+                delete prm.availableValues;
+                return;
+              }
+              const cols = useUi.getState().fields[q] ?? [];
+              prm.availableValues = {
+                query: q,
+                valueField: prm.availableValues?.valueField || cols[0]?.name || '',
+                labelField: prm.availableValues?.labelField || cols[1]?.name,
+              };
+            })
+          }
+        />
+      </Field>
+      {av && (
+        <>
+          <div className="grid2">
+            <Field label="Campo de valor">
+              <TextInput value={av.valueField} mono placeholder="Id" onCommit={(v) => edit('avv', (d) => void (d.parameters[i].availableValues!.valueField = v))} />
+            </Field>
+            <Field label="Campo de rótulo">
+              <TextInput value={av.labelField ?? ''} mono placeholder="(o valor)" onCommit={(v) => edit('avl', (d) => void (d.parameters[i].availableValues!.labelField = v || undefined))} />
+            </Field>
+          </div>
+          {known.length > 0 ? (
+            <p className="muted small">Colunas de {av.query}: <span className="mono">{known.map((f) => f.name).join(', ')}</span></p>
+          ) : (
+            <p className="muted small">Use ⟳ Campos na query {av.query} para conferir as colunas.</p>
+          )}
+        </>
+      )}
+      {others.length > 0 && (
+        <Field label="Depende de (cascata)" hint="Ao mudar um destes, a lista é recarregada e o valor escolhido é limpo">
+          <div className="row gap">
+            {others.map((o) => (
+              <Toggle
+                key={o.name}
+                label={o.label || o.name}
+                checked={!!p.dependsOn?.includes(o.name)}
+                onChange={(on) =>
+                  edit('dep', (d) => {
+                    const prm = d.parameters[i];
+                    const set = new Set(prm.dependsOn ?? []);
+                    if (on) set.add(o.name);
+                    else set.delete(o.name);
+                    if (set.size) prm.dependsOn = [...set];
+                    else delete prm.dependsOn;
+                  })
+                }
+              />
+            ))}
+          </div>
+        </Field>
+      )}
+      <p className="muted small mono">
+        {p.multiValue ? `IN (:${p.name}) na SQL · JOIN(Params.${p.name}, ", ")` : `:${p.name} na SQL · Params.${p.name}`} nas expressões
+      </p>
     </div>
   );
 }

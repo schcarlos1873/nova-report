@@ -25,6 +25,8 @@ cargo run --release -p nova-cli -- render examples/vendas_por_regiao.nrep -o ven
 cargo run --release -p nova-cli -- render examples/vendas_por_regiao.nrep -o vendas.xlsx
 cargo run --release -p nova-cli -- render examples/vendas_por_regiao.nrep -p data_fim=2024-06-30
 cargo run --release -p nova-cli -- validate examples/vendas_por_regiao.nrep
+cargo run --release -p nova-cli -- render examples/vendas_zebrado.nrep -o zebrado.pdf   # linhas zebradas
+cargo run --release -p nova-cli -- render examples/vendas_cascata.nrep -p regioes=1,3 -p clientes=1,5,6   # parâmetros em cascata (vários valores)
 cargo run --release -p nova-cli -- drivers
 
 # testes
@@ -149,7 +151,7 @@ crates/
 apps/desktop
   src-tauri          Composition root + comandos IPC
   src                React: designer (Konva), painéis, preview
-examples/            vendas.db + vendas_por_regiao.nrep
+examples/            vendas.db + vendas_por_regiao.nrep + vendas_zebrado.nrep + vendas_cascata.nrep
 proto/               Contrato gRPC para conectores sidecar (Tier 3)
 docs/ARCHITECTURE.md Decisões de arquitetura
 ```

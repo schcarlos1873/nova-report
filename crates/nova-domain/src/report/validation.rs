@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use super::{BandType, ElementKind, ReportDefinition, sql};
+use crate::params::ParamType;
 
 const TOLERANCE_MM: f64 = 0.01;
 
@@ -99,6 +100,42 @@ pub(super) fn validate(def: &ReportDefinition) -> Vec<ValidationIssue> {
         if !p.name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || p.name.is_empty() {
             issues.error(format!("parameters[{}]", p.name), "nome deve conter apenas letras, números e _");
         }
+        let path = format!("parameters[{}]", p.name);
+        if p.multi_value && p.param_type == ParamType::Bool {
+            issues.error(&path, "parâmetro booleano não pode ter vários valores");
+        }
+        for d in &p.depends_on {
+            if d == &p.name {
+                issues.error(&path, "um parâmetro não pode depender de si mesmo");
+            } else if !declared_params.contains(d.as_str()) {
+                issues.error(&path, format!("dependsOn: parâmetro '{d}' não declarado"));
+            }
+        }
+        if let Some(av) = &p.available_values {
+            match def.find_query(&av.query) {
+                None => issues.error(&path, format!("availableValues: query '{}' não existe", av.query)),
+                Some((ds, q)) => {
+                    if av.value_field.trim().is_empty() {
+                        issues.error(&path, "availableValues: informe o campo de valor");
+                    }
+                    if ds.provider.is_sql() {
+                        // a lista só é recarregada quando um parâmetro de `dependsOn` muda
+                        for used in sql::named_parameters(&q.sql) {
+                            if used == p.name {
+                                issues.error(&path, format!("a query de valores '{}' usa o próprio parâmetro", q.name));
+                            } else if !p.depends_on.iter().any(|d| d == &used) {
+                                issues.warn(&path, format!("a query '{}' usa ':{used}', mas '{used}' não está em dependsOn", q.name));
+                            }
+                        }
+                    }
+                }
+            }
+        } else if !p.depends_on.is_empty() {
+            issues.warn(&path, "dependsOn só tem efeito com availableValues");
+        }
+    }
+    if let Some(cycle) = dependency_cycle(&def.parameters) {
+        issues.error("parameters", format!("dependência circular entre parâmetros: {}", cycle.join(" → ")));
     }
 
     // ---- grupos
@@ -192,4 +229,38 @@ pub(super) fn validate(def: &ReportDefinition) -> Vec<ValidationIssue> {
     }
 
     issues.0
+}
+
+/// Primeiro ciclo encontrado em `dependsOn` (ex.: `a → b → a`).
+fn dependency_cycle(params: &[crate::report::ParameterDef]) -> Option<Vec<String>> {
+    use std::collections::HashMap;
+    let deps: HashMap<&str, &[String]> = params.iter().map(|p| (p.name.as_str(), p.depends_on.as_slice())).collect();
+    // 0 = não visitado, 1 = na pilha, 2 = concluído
+    let mut state: HashMap<&str, u8> = HashMap::new();
+    fn visit<'a>(n: &'a str, deps: &HashMap<&'a str, &'a [String]>, state: &mut HashMap<&'a str, u8>, stack: &mut Vec<&'a str>) -> Option<Vec<String>> {
+        match state.get(n) {
+            Some(2) => return None,
+            Some(1) => {
+                let start = stack.iter().position(|x| *x == n).unwrap_or(0);
+                let mut c: Vec<String> = stack[start..].iter().map(|s| s.to_string()).collect();
+                c.push(n.to_string());
+                return Some(c);
+            }
+            _ => {}
+        }
+        state.insert(n, 1);
+        stack.push(n);
+        for d in deps.get(n).copied().unwrap_or_default() {
+            if deps.contains_key(d.as_str()) {
+                if let Some(c) = visit(d.as_str(), deps, state, stack) {
+                    return Some(c);
+                }
+            }
+        }
+        stack.pop();
+        state.insert(n, 2);
+        None
+    }
+    let mut stack = Vec::new();
+    params.iter().find_map(|p| visit(p.name.as_str(), &deps, &mut state, &mut stack))
 }

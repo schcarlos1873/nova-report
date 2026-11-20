@@ -65,6 +65,8 @@ fn to_param(v: &ParamValue) -> Box<dyn ToSql> {
         ParamValue::Date(d) => Box::new(*d),
         ParamValue::DateTime(d) => Box::new(*d),
         ParamValue::Null => Box::new(Option::<String>::None),
+        // `bind_named` já expandiu listas em escalares; fallback defensivo
+        ParamValue::List(_) => Box::new(v.to_text()),
     }
 }
 

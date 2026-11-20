@@ -1,0 +1,705 @@
+{
+  "$schema": "https://novareport.io/schemas/v1/report.json",
+  "schemaVersion": "1.0",
+  "meta": {
+    "title": "Pedidos por região e cliente (filtros em cascata)",
+    "description": "Exemplo de parâmetros em cascata com vários valores: Região → Cliente (dependsOn) → pedidos.",
+    "author": "NovaReport",
+    "paperSize": "A4",
+    "orientation": "portrait",
+    "margins": {
+      "top": 10.0,
+      "bottom": 10.0,
+      "left": 15.0,
+      "right": 15.0
+    }
+  },
+  "dataSources": [
+    {
+      "id": "ds_vendas",
+      "provider": "sqlite",
+      "options": {
+        "path": "vendas.db"
+      },
+      "queries": [
+        {
+          "name": "Pedidos",
+          "sql": "SELECT r.nome AS regiao, c.nome AS cliente, c.cidade, p.id AS pedido, p.data, pr.descricao AS produto, p.quantidade, p.valor_total, p.status FROM pedidos p JOIN clientes c ON c.id = p.cliente_id JOIN regioes r ON r.id = c.regiao_id JOIN produtos pr ON pr.id = p.produto_id WHERE p.data BETWEEN :data_inicio AND :data_fim AND c.regiao_id IN (:regioes) AND c.id IN (:clientes) ORDER BY r.nome, c.nome, p.data"
+        },
+        {
+          "name": "ResumoProdutos",
+          "sql": "SELECT pr.descricao AS produto, SUM(p.quantidade) AS qtd, SUM(p.valor_total) AS total FROM pedidos p JOIN produtos pr ON pr.id = p.produto_id JOIN clientes c ON c.id = p.cliente_id WHERE p.data BETWEEN :data_inicio AND :data_fim AND c.regiao_id IN (:regioes) AND c.id IN (:clientes) GROUP BY pr.descricao ORDER BY total DESC"
+        },
+        {
+          "name": "LkRegioes",
+          "sql": "SELECT id, nome FROM regioes ORDER BY nome"
+        },
+        {
+          "name": "LkClientes",
+          "sql": "SELECT c.id, c.nome || ' (' || c.cidade || ')' AS rotulo FROM clientes c WHERE c.regiao_id IN (:regioes) ORDER BY c.nome"
+        }
+      ]
+    }
+  ],
+  "parameters": [
+    {
+      "name": "data_inicio",
+      "type": "date",
+      "label": "Data inicial",
+      "required": true,
+      "defaultValue": "2024-01-01"
+    },
+    {
+      "name": "data_fim",
+      "type": "date",
+      "label": "Data final",
+      "required": true,
+      "defaultValue": "2024-12-31"
+    },
+    {
+      "name": "regioes",
+      "type": "int",
+      "label": "Regiões",
+      "required": true,
+      "multiValue": true,
+      "availableValues": {
+        "query": "LkRegioes",
+        "valueField": "id",
+        "labelField": "nome"
+      },
+      "defaultValue": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "name": "clientes",
+      "type": "int",
+      "label": "Clientes",
+      "required": true,
+      "multiValue": true,
+      "dependsOn": [
+        "regioes"
+      ],
+      "availableValues": {
+        "query": "LkClientes",
+        "valueField": "id",
+        "labelField": "rotulo"
+      },
+      "defaultValue": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    }
+  ],
+  "groups": [],
+  "bands": [
+    {
+      "id": "report_header_1",
+      "type": "reportHeader",
+      "height": 22.0,
+      "elements": [
+        {
+          "id": "titulo",
+          "type": "label",
+          "text": "Pedidos por região e cliente",
+          "x": 0.0,
+          "y": 1.0,
+          "width": 180.0,
+          "height": 8.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 15.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "periodo",
+          "type": "expression",
+          "expression": "\"Período: \" + FORMAT_DATE(Params.data_inicio, '%d/%m/%Y') + \" a \" + FORMAT_DATE(Params.data_fim, '%d/%m/%Y')",
+          "x": 0.0,
+          "y": 10.0,
+          "width": 180.0,
+          "height": 5.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#475569",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "selecao",
+          "type": "expression",
+          "expression": "\"Regiões selecionadas: \" + Params.regioes.len() + \" · clientes: \" + Params.clientes.len()",
+          "x": 0.0,
+          "y": 15.0,
+          "width": 180.0,
+          "height": 5.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#475569",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "page_header_1",
+      "type": "pageHeader",
+      "height": 7.0,
+      "elements": [
+        {
+          "id": "cabecalho_fundo",
+          "type": "rectangle",
+          "radius": 0.0,
+          "x": 0.0,
+          "y": 0.0,
+          "width": 180.0,
+          "height": 7.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0,
+            "background": "#1E3A8A"
+          }
+        },
+        {
+          "id": "h_pedido",
+          "type": "label",
+          "text": "Pedido",
+          "x": 0.0,
+          "y": 0.0,
+          "width": 16.0,
+          "height": 7.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#FFFFFF",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "h_data",
+          "type": "label",
+          "text": "Data",
+          "x": 18.0,
+          "y": 0.0,
+          "width": 22.0,
+          "height": 7.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#FFFFFF",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "h_cliente",
+          "type": "label",
+          "text": "Cliente",
+          "x": 42.0,
+          "y": 0.0,
+          "width": 48.0,
+          "height": 7.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#FFFFFF",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "h_produto",
+          "type": "label",
+          "text": "Produto",
+          "x": 92.0,
+          "y": 0.0,
+          "width": 44.0,
+          "height": 7.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#FFFFFF",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "h_quantidade",
+          "type": "label",
+          "text": "Qtd",
+          "x": 136.0,
+          "y": 0.0,
+          "width": 14.0,
+          "height": 7.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#FFFFFF",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "h_valor_total",
+          "type": "label",
+          "text": "Valor",
+          "x": 150.0,
+          "y": 0.0,
+          "width": 30.0,
+          "height": 7.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#FFFFFF",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "detail_1",
+      "type": "detail",
+      "height": 6.0,
+      "dataSource": "Pedidos",
+      "elements": [
+        {
+          "id": "zebra_1",
+          "type": "rectangle",
+          "radius": 0.0,
+          "x": 0.0,
+          "y": 0.0,
+          "width": 180.0,
+          "height": 6.0,
+          "backgroundExpression": "IIF(RECORD_NUMBER() % 2 == 0, \"#EEF2FF\", \"#FFFFFF\")",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "d_pedido",
+          "type": "expression",
+          "expression": "Fields.pedido",
+          "x": 0.0,
+          "y": 0.0,
+          "width": 16.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "d_data",
+          "type": "expression",
+          "expression": "Fields.data",
+          "x": 18.0,
+          "y": 0.0,
+          "width": 22.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          },
+          "format": "date:%d/%m/%Y"
+        },
+        {
+          "id": "d_cliente",
+          "type": "expression",
+          "expression": "Fields.cliente",
+          "x": 42.0,
+          "y": 0.0,
+          "width": 48.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "d_produto",
+          "type": "expression",
+          "expression": "Fields.produto",
+          "x": 92.0,
+          "y": 0.0,
+          "width": 44.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "d_quantidade",
+          "type": "expression",
+          "expression": "Fields.quantidade",
+          "x": 136.0,
+          "y": 0.0,
+          "width": 14.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          },
+          "format": "number:0"
+        },
+        {
+          "id": "d_valor_total",
+          "type": "expression",
+          "expression": "Fields.valor_total",
+          "x": 150.0,
+          "y": 0.0,
+          "width": 30.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          },
+          "format": "currency:BRL"
+        }
+      ]
+    },
+    {
+      "id": "page_footer_1",
+      "type": "pageFooter",
+      "height": 8.0,
+      "elements": [
+        {
+          "id": "pagina",
+          "type": "label",
+          "text": "Página {PAGE} de {PAGES}",
+          "x": 120.0,
+          "y": 2.0,
+          "width": 60.0,
+          "height": 5.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#64748B",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "report_footer_1",
+      "type": "reportFooter",
+      "height": 62.0,
+      "elements": [
+        {
+          "id": "linha_total",
+          "type": "line",
+          "direction": "horizontal",
+          "x": 0.0,
+          "y": 1.0,
+          "width": 180.0,
+          "height": 0.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.75,
+            "borderColor": "#1E3A8A",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "rotulo_total",
+          "type": "label",
+          "text": "Total geral",
+          "x": 92.0,
+          "y": 2.0,
+          "width": 44.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "total_qtd",
+          "type": "expression",
+          "expression": "SUM(\"quantidade\")",
+          "format": "number:0",
+          "x": 136.0,
+          "y": 2.0,
+          "width": 14.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "total_valor",
+          "type": "expression",
+          "expression": "SUM(\"valor_total\")",
+          "format": "currency:BRL",
+          "x": 150.0,
+          "y": 2.0,
+          "width": 30.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 1.0
+          }
+        },
+        {
+          "id": "titulo_resumo",
+          "type": "label",
+          "text": "Resumo por produto (mesmos filtros)",
+          "x": 0.0,
+          "y": 13.0,
+          "width": 180.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 11.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "tbl_resumo",
+          "type": "table",
+          "dataSource": "ResumoProdutos",
+          "repeatHeader": true,
+          "headerBackground": "#C7D2FE",
+          "zebraBackground": "#EEF2FF",
+          "columns": [
+            {
+              "header": "Produto",
+              "expression": "Fields.produto",
+              "width": 100.0
+            },
+            {
+              "header": "Quantidade",
+              "expression": "Fields.qtd",
+              "width": 35.0,
+              "align": "right",
+              "format": "number:0",
+              "footer": "SUM(\"qtd\")"
+            },
+            {
+              "header": "Total",
+              "expression": "Fields.total",
+              "width": 45.0,
+              "align": "right",
+              "format": "currency:BRL",
+              "footer": "SUM(\"total\")"
+            }
+          ],
+          "x": 0.0,
+          "y": 21.0,
+          "width": 180.0,
+          "height": 38.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 9.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#0F172A",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    }
+  ]
+}

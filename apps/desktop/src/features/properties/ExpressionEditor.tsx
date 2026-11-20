@@ -9,6 +9,7 @@ const FUNCTIONS = [
   'IIF(cond, a, b)', 'FORMAT_DATE(v, "%d/%m/%Y")', 'Format.currency(v, "BRL")', 'Format.number(v, 2)', 'Format.percent(v, 1)',
   'ROUND(v, 2)', 'UPPER(v)', 'LOWER(v)', 'TRIM(v)', 'LEFT(v, n)', 'RIGHT(v, n)', 'LEN(v)', 'COALESCE(a, b)', 'ISNULL(v)',
   'TODAY()', 'NOW()', 'RECORD_NUMBER()', 'PAGE_NUMBER()', 'TOTAL_PAGES()', 'Report.Title', 'Group.Count',
+  'JOIN(Params.lista, ", ")', 'CONTAINS(Params.lista, v)',
 ];
 
 /** Campo de expressão com botão para abrir o editor completo (validação de sintaxe no motor Rhai). */

@@ -76,6 +76,33 @@ pub struct ParameterDef {
     pub required: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_value: Option<serde_json::Value>,
+    /// Aceita vários valores: `:nome` na SQL vira uma lista (`IN (:nome)`) e `Params.nome` um array.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub multi_value: bool,
+    /// Parâmetros dos quais a lista de valores depende (filtro em cascata). Quando um deles muda,
+    /// a lista é recarregada e o valor escolhido é limpo.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
+    /// Lista de valores permitidos vinda de uma query do relatório.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_values: Option<AvailableValues>,
+}
+
+/// Origem da lista de valores de um parâmetro.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailableValues {
+    /// Nome de uma query declarada em `dataSources`.
+    pub query: String,
+    /// Coluna com o valor enviado ao relatório.
+    pub value_field: String,
+    /// Coluna exibida ao usuário (padrão: o próprio valor).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_field: Option<String>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 fn default_schema() -> String {
@@ -191,12 +218,23 @@ impl ReportDefinition {
         self.data_sources.iter().flat_map(|ds| ds.queries.iter().map(move |q| (ds, q)))
     }
 
-    /// Dataset principal: o da banda de detalhe, ou a única query existente.
+    /// Query usada só para listar valores de parâmetros (nenhuma banda ou tabela a consome).
+    /// Não é executada na geração do relatório.
+    pub fn is_parameter_only_query(&self, name: &str) -> bool {
+        let lookup = self.parameters.iter().any(|p| p.available_values.as_ref().is_some_and(|a| a.query == name));
+        let in_layout = self.bands.iter().any(|b| {
+            b.data_source.as_deref() == Some(name)
+                || b.elements.iter().any(|e| matches!(&e.kind, ElementKind::Table(t) if t.data_source == name))
+        });
+        lookup && !in_layout
+    }
+
+    /// Dataset principal: o da banda de detalhe, ou a única query de dados existente.
     pub fn main_query_name(&self) -> Option<String> {
         self.band(BandType::Detail)
             .and_then(|b| b.data_source.clone())
             .or_else(|| {
-                let mut it = self.all_queries();
+                let mut it = self.all_queries().filter(|(_, q)| !self.is_parameter_only_query(&q.name));
                 match (it.next(), it.next()) {
                     (Some((_, q)), None) => Some(q.name.clone()),
                     _ => None,

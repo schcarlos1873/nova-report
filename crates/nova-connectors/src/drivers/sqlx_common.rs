@@ -77,6 +77,8 @@ macro_rules! bind_all {
                 nova_domain::ParamValue::Date(d) => q.bind(d),
                 nova_domain::ParamValue::DateTime(d) => q.bind(d),
                 nova_domain::ParamValue::Null => q.bind(Option::<String>::None),
+                // `bind_named` já expandiu listas em escalares; fallback defensivo
+                nova_domain::ParamValue::List(_) => q.bind(v.to_text()),
             };
         }
         q

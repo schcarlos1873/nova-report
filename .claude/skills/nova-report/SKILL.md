@@ -17,5 +17,6 @@ description: A skill for generating Nova Reports to be used in any context. It c
 - [Fase 2: Nova Report](./agents/fase_2_construtor_de_relat_rios_desktop_tauri_rust.md)
 - [Engineering Report](./agents/engine_core_datasources_express_es.md)
 - [Transpilador Typst & Visualizador Paginado](./agents/transpilador_typst_visualizador_paginado_tauri_react.md)
-
+- [Especificação de Conectores Universais](./agents/universal_connectors_spec.md)
+- [Arquitetura de Parâmetros e Filtros em Cascata](./agents/arquitetura_de_par_metros_filtros_em_cascata.md)
 

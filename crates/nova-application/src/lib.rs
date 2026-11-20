@@ -10,6 +10,6 @@ pub mod ports;
 pub mod use_cases;
 
 pub use error::{AppError, AppResult};
-pub use use_cases::connections::{ConnectionService, QueryPreview};
+pub use use_cases::connections::{ConnectionService, ParameterOption, ParameterValues, QueryPreview};
 pub use use_cases::documents::DocumentService;
 pub use use_cases::render::{ExportFormat, PreviewResult, RenderService, RenderStats};

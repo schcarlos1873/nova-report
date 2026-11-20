@@ -18,7 +18,7 @@ use nova_application::ports::ConnectorGateway;
 use nova_application::{DocumentService, ExportFormat, RenderService};
 use nova_connectors::ConnectorRegistry;
 use nova_connectors::store::{FsReportRepository, JsonProfileRepository};
-use nova_connectors::vault::{ChainVault, MemoryVault, OsKeyringVault};
+use nova_connectors::vault::{CachedVault, ChainVault, MemoryVault, OsKeyringVault};
 use nova_domain::ports::CredentialVault;
 use nova_domain::report::Severity;
 use nova_engine::render::{FontLibrary, ReportCompiler};
@@ -76,7 +76,7 @@ fn compose(system_fonts: bool) -> Result<(RenderService, DocumentService), Strin
             env_vault.store(alias, &v).map_err(|e| e.to_string())?;
         }
     }
-    let vault = Arc::new(ChainVault::new(vec![env_vault, Arc::new(OsKeyringVault::new())]));
+    let vault = Arc::new(ChainVault::new(vec![env_vault, Arc::new(CachedVault::new(Arc::new(OsKeyringVault::new())))]));
     let resolver = ConnectionResolver::new(Arc::new(JsonProfileRepository::new(profiles_path())), vault);
     let fonts = Arc::new(FontLibrary::load(system_fonts));
     let render = RenderService::new(Arc::new(ConnectorRegistry::with_builtin_drivers()), resolver, ReportCompiler::new(fonts));

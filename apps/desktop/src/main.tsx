@@ -5,11 +5,14 @@ import './styles.css';
 
 async function bootstrap() {
   if (import.meta.env.DEV && !('__TAURI_INTERNALS__' in window)) {
-    const { installDevMock, demoReport } = await import('./infra/devMock');
+    const { installDevMock, demoReport, cascadeReport } = await import('./infra/devMock');
     installDevMock();
-    if (new URLSearchParams(location.search).has('demo')) {
+    const demo = new URLSearchParams(location.search).get('demo');
+    if (demo !== null) {
       const { useReport } = await import('./state/reportStore');
-      useReport.getState().load(demoReport, '/demo/vendas_por_regiao.nrep');
+      // ?demo=cascata abre o exemplo de filtros em cascata
+      if (demo === 'cascata') useReport.getState().load(cascadeReport, '/demo/vendas_cascata.nrep');
+      else useReport.getState().load(demoReport, '/demo/vendas_por_regiao.nrep');
     }
     // ?tab=data|connections e ?mode=preview facilitam inspeção visual automatizada
     const { useUi } = await import('./state/uiStore');

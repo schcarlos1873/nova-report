@@ -89,3 +89,16 @@ fn preprocess_single_quotes() {
     assert_eq!(preprocess("f('BRL', \"it's\")"), "f(\"BRL\", \"it's\")");
     assert_eq!(preprocess("'d''x'"), "\"d'x\"");
 }
+
+#[test]
+fn multi_value_params_are_arrays() {
+    let params = HashMap::from([
+        ("maq".to_string(), ParamValue::List(vec![ParamValue::Text("M1".into()), ParamValue::Text("M2".into())])),
+        ("vazio".to_string(), ParamValue::List(vec![])),
+    ]);
+    let mut e = FormulaEngine::new(&params, "Teste");
+    assert_eq!(e.eval_string("JOIN(Params.maq, \", \")").unwrap(), "M1, M2");
+    assert_eq!(e.eval_string("Params.maq.len()").unwrap(), "2");
+    assert_eq!(e.eval_string("CONTAINS(Params.maq, \"M2\")").unwrap(), "true");
+    assert_eq!(e.eval_string("JOIN(Params.vazio, \", \")").unwrap(), "");
+}

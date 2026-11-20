@@ -4,6 +4,8 @@ import { api } from '../../infra/api';
 import { dialogs } from '../../infra/dialogs';
 import { useReport } from '../../state/reportStore';
 import { useUi } from '../../state/uiStore';
+import { ParamPicker, type ListState } from './ParamPicker';
+import { defaultCandidates, dependentsOf, emptyValue, keepValid, topoOrder } from './cascade';
 
 const EXPORTS: { format: ExportFormat; label: string; ext: string }[] = [
   { format: 'pdf', label: 'PDF', ext: 'pdf' },
@@ -52,6 +54,63 @@ export function PreviewPane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report, live]);
 
+  // ---- listas de valores e filtros em cascata
+  const [lists, setLists] = useState<Record<string, ListState>>({});
+  const listSeq = useRef<Record<string, number>>({});
+  const parentTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // recarrega só quando a configuração dos parâmetros/queries muda (não a cada ajuste de layout)
+  const paramsKey = JSON.stringify([report.parameters, report.dataSources]);
+
+  /** Carrega as listas de `targets` em ordem; cada filho vê os valores já ajustados dos pais. */
+  const loadLists = useCallback(async (targets: ParameterDef[], initial: boolean) => {
+    for (const p of targets) {
+      if (!p.availableValues) continue;
+      const seq = (listSeq.current[p.name] = (listSeq.current[p.name] ?? 0) + 1);
+      setLists((l) => ({ ...l, [p.name]: { status: 'loading', options: l[p.name]?.options ?? [] } }));
+      try {
+        const { report: r, filePath: fp } = useReport.getState();
+        const res = await api.parameterValues(r, p.name, useUi.getState().paramValues, fp);
+        if (seq !== listSeq.current[p.name]) return; // resposta obsoleta: outra mudança já disparou nova carga
+        const options = res.values;
+        const state: ListState = res.waitingFor.length
+          ? { status: 'waiting', options: [], waitingFor: res.waitingFor }
+          : { status: 'ready', options, truncated: res.truncated };
+        setLists((l) => ({ ...l, [p.name]: state }));
+        const cur = useUi.getState().paramValues[p.name];
+        const allowed = options.map((o) => o.value);
+        let next: unknown;
+        if (cur === undefined && initial) {
+          // primeira carga: aplica o padrão do .nrep se ele existir na lista
+          const wanted = defaultCandidates(p).map(String);
+          const picked = allowed.filter((v) => wanted.includes(String(v)));
+          next = p.multiValue ? picked : picked[0] ?? null;
+        } else {
+          next = keepValid(p, cur ?? emptyValue(p), allowed);
+        }
+        set({ paramValues: { ...useUi.getState().paramValues, [p.name]: next } });
+      } catch (e) {
+        if (seq === listSeq.current[p.name]) setLists((l) => ({ ...l, [p.name]: { status: 'error', options: [], error: (e as Error).message } }));
+      }
+    }
+  }, [set]);
+
+  useEffect(() => {
+    loadLists(topoOrder(useReport.getState().report.parameters), true);
+  }, [paramsKey, loadLists]);
+
+  /** Mudança feita pelo usuário: limpa os dependentes e recarrega suas listas. */
+  const changeParam = (p: ParameterDef, v: unknown) => {
+    const params = useReport.getState().report.parameters;
+    const deps = dependentsOf(params, p.name);
+    const values = { ...useUi.getState().paramValues, [p.name]: v };
+    for (const d of deps) values[d.name] = emptyValue(d);
+    set({ paramValues: values });
+    if (!deps.length) return;
+    clearTimeout(parentTimer.current);
+    // campos digitados (texto, data, número) esperam a digitação parar
+    parentTimer.current = setTimeout(() => loadLists(deps, false), p.availableValues ? 0 : 400);
+  };
+
   const goTo = (n: number) => {
     const p = Math.min(Math.max(1, n), result?.pageCount ?? 1);
     setPage(p);
@@ -86,9 +145,16 @@ export function PreviewPane() {
     <div className="preview">
       {report.parameters.length > 0 && (
         <div className="param-bar">
-          {report.parameters.map((p) => (
-            <ParamInput key={p.name} p={p} value={paramValues[p.name]} onChange={(v) => set({ paramValues: { ...useUi.getState().paramValues, [p.name]: v } })} />
-          ))}
+          {report.parameters.map((p) =>
+            p.availableValues ? (
+              <div key={p.name} className="param" role="group" aria-label={p.label || p.name}>
+                <span>{p.label || p.name}{p.required ? ' *' : ''}{p.multiValue ? ' (vários)' : ''}</span>
+                <ParamPicker p={p} value={paramValues[p.name]} list={lists[p.name]} onChange={(v) => changeParam(p, v)} />
+              </div>
+            ) : (
+              <ParamInput key={p.name} p={p} value={paramValues[p.name]} onChange={(v) => changeParam(p, v)} />
+            ),
+          )}
           <button className="primary" onClick={() => run(true)} disabled={busy}>Aplicar</button>
         </div>
       )}

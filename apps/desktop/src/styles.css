@@ -258,3 +258,19 @@ textarea.sql { resize: vertical; line-height: 1.4; }
 .preview-warnings ul { margin: 4px 0; }
 .zoom-label { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
 .toggle { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
+
+/* ---- parâmetros com lista (cascata) */
+.param-picker { position: relative; display: flex; flex-direction: column; gap: 2px; }
+.picker-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 200px; padding: 4px 8px; color: var(--text); text-align: left; }
+.picker-btn.error { border-color: var(--danger); }
+.picker-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-pop { position: absolute; top: calc(100% + 2px); left: 0; z-index: 40; width: 280px; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.2); padding: 6px; display: flex; flex-direction: column; gap: 4px; color: var(--text); font-size: 12px; }
+.param .picker-pop input.picker-search { width: 100%; }
+.param .picker-pop input[type='checkbox'] { width: auto; flex: none; margin: 0; }
+.picker-actions { display: flex; justify-content: space-between; padding: 0 2px; }
+.picker-pop ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; }
+.picker-pop li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 4px; cursor: pointer; text-align: left; }
+.picker-pop li:hover, .picker-pop li:focus-visible { background: var(--accent-soft); }
+.picker-pop ul:not([aria-multiselectable='true']) li.sel { background: var(--accent-soft); font-weight: 600; }
+.picker-note { margin: 0; padding: 0 2px; }
+.picker-error { color: var(--danger); font-size: 11px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

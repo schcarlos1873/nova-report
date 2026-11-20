@@ -117,12 +117,13 @@ impl RenderService {
         let start = Instant::now();
         let mut requests = Vec::new();
         for ds in &def.data_sources {
-            if ds.queries.is_empty() {
+            if ds.queries.iter().all(|q| def.is_parameter_only_query(&q.name)) {
                 continue;
             }
             let config = self.resolver.for_data_source(ds, base_dir)?;
             let provider = self.gateway.provider(config)?;
-            for q in &ds.queries {
+            // queries que só listam valores de parâmetros não fazem parte dos dados do relatório
+            for q in ds.queries.iter().filter(|q| !def.is_parameter_only_query(&q.name)) {
                 requests.push(DataRequest { name: q.name.clone(), provider: provider.clone(), query: q.sql.clone() });
             }
         }

@@ -6,10 +6,10 @@
     "paperSize": "A4",
     "orientation": "landscape",
     "margins": {
-      "top": 10.0,
-      "bottom": 10.0,
-      "left": 15.0,
-      "right": 15.0
+      "top": 5.0,
+      "bottom": 5.0,
+      "left": 5.0,
+      "right": 5.0
     }
   },
   "dataSources": [
@@ -23,7 +23,19 @@
       "queries": [
         {
           "name": "ProdReel",
-          "sql": "select mm.Code MachineId, pr.ReelNum, pr.TurnupDateBegin, pr.TurnupDateEnd, pr.WeightTurnup, pr.WidthTurnup,\npr.DiameterTurnup, pr.CreatedBy  \nfrom ProdReel pr \ninner join MastMachine mm on pr.MachineId  = mm.Id\nwhere pr.TurnupDateBegin >= :BeginDate and pr.TurnupDateEnd <= :EndDate"
+          "sql": "select mm.Code MachineId, pr.ReelNum, pr.TurnupDateBegin, pr.TurnupDateEnd, pr.WeightTurnup, pr.WidthTurnup,\npr.DiameterTurnup, pr.CreatedBy  \nfrom ProdReel pr \ninner join MastMachine mm on pr.MachineId  = mm.Id\nwhere pr.TurnupDateBegin >= :BeginDate and pr.TurnupDateEnd <= :EndDate\nand pr.MachineId in (:machineId)"
+        },
+        {
+          "name": "MastFactory",
+          "sql": "select mf.Id, mf.Code from MastFactory mf where mf.IsActive = 1 order by mf.Code"
+        },
+        {
+          "name": "MastMachineType",
+          "sql": "select mmt.Id, mmt.Code from MastMachineType mmt where mmt.IsActive = 1 order by mmt.Code"
+        },
+        {
+          "name": "MastMachine",
+          "sql": "select m.Id, m.Code from MastMachine m where m.IsActive = 1 and m.FactoryId in (:factoryId)\nand m.MachineTypeId in (:machineType) order by m.Code"
         }
       ]
     }
@@ -42,6 +54,45 @@
       "label": "Data Final",
       "required": false,
       "defaultValue": "2026-10-05"
+    },
+    {
+      "name": "factoryId",
+      "type": "string",
+      "label": "Fábrica",
+      "required": true,
+      "multiValue": true,
+      "availableValues": {
+        "query": "MastFactory",
+        "valueField": "Id",
+        "labelField": "Code"
+      }
+    },
+    {
+      "name": "machineType",
+      "type": "string",
+      "label": "Tipo Máquina",
+      "required": true,
+      "multiValue": true,
+      "availableValues": {
+        "query": "MastMachineType",
+        "valueField": "Id",
+        "labelField": "Code"
+      }
+    },
+    {
+      "name": "machineId",
+      "type": "string",
+      "label": "Maquina",
+      "required": false,
+      "dependsOn": [
+        "factoryId",
+        "machineType"
+      ],
+      "availableValues": {
+        "query": "MastMachine",
+        "valueField": "Id",
+        "labelField": "Code"
+      }
     }
   ],
   "groups": [
@@ -198,7 +249,7 @@
             "underline": false,
             "color": "#000000",
             "background": "#d6d6d6",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -221,7 +272,7 @@
             "underline": false,
             "color": "#000000",
             "background": "#d6d6d6",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -244,7 +295,7 @@
             "underline": false,
             "color": "#000000",
             "background": "#d6d6d6",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -267,7 +318,7 @@
             "underline": false,
             "color": "#000000",
             "background": "#d6d6d6",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -290,7 +341,7 @@
             "underline": false,
             "color": "#000000",
             "background": "#d6d6d6",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -313,7 +364,7 @@
             "underline": false,
             "color": "#000000",
             "background": "#d6d6d6",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -336,7 +387,7 @@
             "underline": false,
             "color": "#000000",
             "background": "#d6d6d6",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -349,6 +400,7 @@
       "id": "detail_1",
       "type": "detail",
       "height": 7.0,
+      "dataSource": "ProdReel",
       "elements": [
         {
           "id": "fld_5",
@@ -365,7 +417,7 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -387,7 +439,7 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "right",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -409,7 +461,7 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -431,7 +483,7 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -453,7 +505,7 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "right",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -475,7 +527,7 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "right",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -497,7 +549,7 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -516,6 +568,7 @@
           "id": "fld_12",
           "type": "expression",
           "expression": "SUM(\"WeightTurnup\")",
+          "format": "number:0",
           "x": 174.0,
           "y": 2.0,
           "width": 23.0,
@@ -527,7 +580,7 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "right",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -626,6 +679,7 @@
           "id": "fld_15",
           "type": "expression",
           "expression": "AVG(\"WidthTurnup\")",
+          "format": "number:0",
           "x": 121.0,
           "y": 2.0,
           "width": 23.0,
@@ -637,7 +691,7 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "right",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",
@@ -648,6 +702,7 @@
           "id": "fld_16",
           "type": "expression",
           "expression": "AVG(\"DiameterTurnup\")",
+          "format": "number:0",
           "x": 149.0,
           "y": 2.0,
           "width": 23.0,
@@ -659,7 +714,30 @@
             "italic": false,
             "underline": false,
             "color": "#000000",
-            "align": "left",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_17",
+          "type": "expression",
+          "expression": "COUNT()",
+          "format": "number:0",
+          "x": 220.0,
+          "y": 1.0,
+          "width": 23.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "center",
             "verticalAlign": "middle",
             "borderWidth": 0.0,
             "borderColor": "#000000",

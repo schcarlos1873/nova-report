@@ -26,6 +26,8 @@ pub enum ParamValue {
     Bool(bool),
     Date(NaiveDate),
     DateTime(NaiveDateTime),
+    /// Parâmetro de valores múltiplos (elementos sempre escalares).
+    List(Vec<ParamValue>),
     Null,
 }
 
@@ -77,6 +79,32 @@ impl ParamValue {
         })
     }
 
+    /// Coerção de parâmetro de valores múltiplos: aceita array JSON ou texto separado por vírgula
+    /// (`-p maquinas=1,2,3` no CLI). Valores vazios são descartados; nulo vira lista vazia.
+    pub fn coerce_many(name: &str, ty: ParamType, raw: &serde_json::Value) -> DomainResult<Self> {
+        use serde_json::Value as J;
+        let items: Vec<J> = match raw {
+            J::Null => vec![],
+            J::Array(a) => a.clone(),
+            J::String(s) => s.split(',').map(|x| J::String(x.trim().to_string())).collect(),
+            other => vec![other.clone()],
+        };
+        let mut out = Vec::with_capacity(items.len());
+        for it in &items {
+            match Self::coerce(name, ty, it)? {
+                ParamValue::Null => {}
+                v if out.contains(&v) => {}
+                v => out.push(v),
+            }
+        }
+        Ok(ParamValue::List(out))
+    }
+
+    /// Sem valor: nulo ou lista vazia.
+    pub fn is_empty(&self) -> bool {
+        matches!(self, ParamValue::Null) || matches!(self, ParamValue::List(v) if v.is_empty())
+    }
+
     pub fn to_json(&self) -> serde_json::Value {
         match self {
             ParamValue::Int(v) => (*v).into(),
@@ -87,6 +115,7 @@ impl ParamValue {
             ParamValue::Bool(v) => (*v).into(),
             ParamValue::Date(d) => d.format("%Y-%m-%d").to_string().into(),
             ParamValue::DateTime(d) => d.format("%Y-%m-%dT%H:%M:%S").to_string().into(),
+            ParamValue::List(v) => serde_json::Value::Array(v.iter().map(ParamValue::to_json).collect()),
             ParamValue::Null => serde_json::Value::Null,
         }
     }
@@ -96,6 +125,7 @@ impl ParamValue {
         match self {
             ParamValue::Text(s) => s.clone(),
             ParamValue::Null => String::new(),
+            ParamValue::List(v) => v.iter().map(ParamValue::to_text).collect::<Vec<_>>().join(","),
             other => other.to_json().to_string().trim_matches('"').to_string(),
         }
     }
@@ -127,6 +157,17 @@ mod tests {
         let iso = ParamValue::coerce("d", ParamType::Date, &json!("2024-03-01")).unwrap();
         let br = ParamValue::coerce("d", ParamType::Date, &json!("01/03/2024")).unwrap();
         assert_eq!(iso, br);
+    }
+
+    #[test]
+    fn coerce_many_accepts_arrays_and_csv() {
+        let a = ParamValue::coerce_many("m", ParamType::Int, &json!([3, "1", null, 3])).unwrap();
+        assert_eq!(a, ParamValue::List(vec![ParamValue::Int(3), ParamValue::Int(1)]));
+        let b = ParamValue::coerce_many("m", ParamType::Int, &json!("3, 1")).unwrap();
+        assert_eq!(a, b);
+        assert!(ParamValue::coerce_many("m", ParamType::Int, &json!(null)).unwrap().is_empty());
+        assert!(ParamValue::coerce_many("m", ParamType::Int, &json!(["x"])).is_err());
+        assert_eq!(a.to_json(), json!([3, 1]));
     }
 
     #[test]

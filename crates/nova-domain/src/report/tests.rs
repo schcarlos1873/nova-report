@@ -100,3 +100,68 @@ fn group_bands_are_ordered_outer_to_inner() {
         ]
     );
 }
+
+/// Fábrica → Máquina (vários valores) → relatório, com queries de lista.
+fn cascade_report() -> ReportDefinition {
+    let mut def = ReportDefinition::from_json(SPEC_EXAMPLE).unwrap();
+    def.data_sources[0].queries.push(QueryDef { name: "LkFabricas".into(), sql: "SELECT Id, Code FROM fab".into() });
+    def.data_sources[0].queries.push(QueryDef { name: "LkMaquinas".into(), sql: "SELECT Id, Code FROM maq WHERE FactoryId IN (:fabrica)".into() });
+    def.parameters.push(
+        serde_json::from_value(serde_json::json!({
+            "name": "fabrica", "type": "int", "multiValue": true,
+            "availableValues": { "query": "LkFabricas", "valueField": "Id", "labelField": "Code" }
+        }))
+        .unwrap(),
+    );
+    def.parameters.push(
+        serde_json::from_value(serde_json::json!({
+            "name": "maquina", "type": "int", "multiValue": true, "dependsOn": ["fabrica"],
+            "availableValues": { "query": "LkMaquinas", "valueField": "Id" }
+        }))
+        .unwrap(),
+    );
+    def
+}
+
+#[test]
+fn cascading_parameters_validate_and_roundtrip() {
+    let def = cascade_report();
+    assert!(def.ensure_valid().is_ok(), "{:?}", def.validate());
+    let back: ReportDefinition = serde_json::from_str(&serde_json::to_string(&def).unwrap()).unwrap();
+    assert_eq!(back, def);
+    // campos novos são opcionais: parâmetro simples não serializa nada além do que já existia
+    let plain = serde_json::to_value(&def.parameters[0]).unwrap();
+    assert!(plain.get("multiValue").is_none() && plain.get("dependsOn").is_none() && plain.get("availableValues").is_none());
+}
+
+#[test]
+fn lookup_queries_are_not_report_data() {
+    let mut def = cascade_report();
+    assert!(def.is_parameter_only_query("LkMaquinas"));
+    assert!(!def.is_parameter_only_query("Pedidos"));
+    // sem dataSource no detalhe, a única query de dados continua sendo a principal
+    for b in &mut def.bands {
+        b.data_source = None;
+    }
+    assert_eq!(def.main_query_name().as_deref(), Some("Pedidos"));
+}
+
+#[test]
+fn detects_dependency_problems() {
+    // índices: 0 = data_inicio, 1 = fabrica, 2 = maquina
+    let mut def = cascade_report();
+    def.parameters[2].depends_on.clear();
+    let msgs: Vec<String> = def.validate().into_iter().map(|i| i.message).collect();
+    assert!(msgs.iter().any(|m| m.contains("':fabrica'") && m.contains("dependsOn")), "{msgs:?}");
+
+    let mut def = cascade_report();
+    def.parameters[1].depends_on = vec!["maquina".into()];
+    def.parameters[0].depends_on = vec!["inexistente".into()];
+    let issues = def.validate();
+    assert!(issues.iter().any(|i| i.severity == Severity::Error && i.message.contains("circular")), "{issues:?}");
+    assert!(issues.iter().any(|i| i.message.contains("'inexistente' não declarado")));
+
+    let mut def = cascade_report();
+    def.parameters[2].available_values.as_mut().unwrap().query = "Nada".into();
+    assert!(def.validate().iter().any(|i| i.message.contains("'Nada' não existe")));
+}

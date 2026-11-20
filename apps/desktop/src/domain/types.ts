@@ -96,12 +96,36 @@ export interface DataSourceDef {
   queries: QueryDef[];
 }
 
+export interface AvailableValues {
+  /** Query do relatório que lista os valores. */
+  query: string;
+  valueField: string;
+  labelField?: string;
+}
+
 export interface ParameterDef {
   name: string;
   type: ParamType;
   label: string;
   required: boolean;
   defaultValue?: unknown;
+  /** Vários valores: `:nome` vira lista na SQL (`IN (:nome)`) e `Params.nome` um array. */
+  multiValue?: boolean;
+  /** Filtro em cascata: a lista recarrega (e o valor é limpo) quando um destes muda. */
+  dependsOn?: string[];
+  availableValues?: AvailableValues;
+}
+
+export interface ParameterOption {
+  value: string | number | boolean;
+  label: string;
+}
+
+export interface ParameterValues {
+  values: ParameterOption[];
+  truncated: boolean;
+  /** Rótulos dos parâmetros de `dependsOn` ainda vazios. */
+  waitingFor: string[];
 }
 
 export interface GroupDef {
