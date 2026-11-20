@@ -6,8 +6,8 @@ import { api } from '../../infra/api';
 import { dialogs } from '../../infra/dialogs';
 import { useReport } from '../../state/reportStore';
 import { useUi } from '../../state/uiStore';
-import { DND_MIME, type DropPayload } from '../designer/DesignerCanvas';
-import { uniqueId } from '../../domain/factory';
+import { beginDrag, endDrag, isDate, isNumeric } from '../designer/dnd';
+import { addDataSource, addGroup, newParameter } from '../../state/commands';
 
 const PROVIDERS: ProviderKind[] = ['sqlite', 'postgres', 'mysql', 'mssql', 'odbc', 'csv', 'json', 'rest'];
 const PARAM_TYPES: { value: ParamType; label: string }[] = [
@@ -29,7 +29,7 @@ export function DataPanel() {
       <Section
         title="Fontes de dados"
         actions={
-          <button className="link" onClick={() => edit('ds.add', (d) => void d.dataSources.push(newDataSource(d as ReportDefinition)))}>
+          <button className="link" onClick={addDataSource}>
             + Fonte
           </button>
         }
@@ -43,16 +43,7 @@ export function DataPanel() {
       <Section
         title="Parâmetros"
         actions={
-          <button
-            className="link"
-            onClick={() =>
-              edit('p.add', (d) => {
-                let n = d.parameters.length + 1;
-                while (d.parameters.some((p) => p.name === `param${n}`)) n++;
-                d.parameters.push({ name: `param${n}`, type: 'string', label: `Parâmetro ${n}`, required: false });
-              })
-            }
-          >
+          <button className="link" onClick={newParameter}>
             + Parâmetro
           </button>
         }
@@ -81,15 +72,6 @@ export function DataPanel() {
       <GroupsSection />
     </div>
   );
-}
-
-function newDataSource(r: ReportDefinition): DataSourceDef {
-  let n = r.dataSources.length + 1;
-  while (r.dataSources.some((d) => d.id === `ds_${n}`)) n++;
-  const taken = new Set(r.dataSources.flatMap((d) => d.queries.map((q) => q.name)));
-  let q = 1;
-  while (taken.has(`Query${q}`)) q++;
-  return { id: `ds_${n}`, provider: 'sqlite', options: { path: '' }, queries: [{ name: `Query${q}`, sql: 'SELECT 1 AS exemplo' }] };
 }
 
 function DataSourceCard({ ds, index: i }: { ds: DataSourceDef; index: number }) {
@@ -246,6 +228,7 @@ function QueryEditor({ dsIndex, queryIndex }: { dsIndex: number; queryIndex: num
         <button disabled={busy} onClick={() => run(true)}>▶ Executar</button>
         <button disabled={busy} onClick={() => run(false)}>⟳ Campos</button>
       </div>
+      {known.length === 0 && <p className="muted small">Clique em ⟳ Campos para listar os campos e arrastá-los ao canvas.</p>}
       {known.length > 0 && (
         <div className="fields">
           {known.map((f) => (
@@ -253,12 +236,11 @@ function QueryEditor({ dsIndex, queryIndex }: { dsIndex: number; queryIndex: num
               key={f.name}
               className="chip field-chip"
               draggable
-              title={`${f.dataType} — arraste para o canvas`}
-              onDragStart={(e) => {
-                const payload: DropPayload = { field: f.name };
-                e.dataTransfer.setData(DND_MIME, JSON.stringify(payload));
-              }}
+              title={`${f.dataType} — arraste para uma banda ou tabela (⌥ ao soltar: valor + rótulo)`}
+              onDragStart={(e) => beginDrag(e, { field: f.name, query: q.name, dataType: f.dataType })}
+              onDragEnd={endDrag}
             >
+              <span className="field-type" aria-hidden>{isNumeric(f.dataType) ? '#' : isDate(f.dataType) ? '◷' : 'a'}</span>
               {f.name}
             </span>
           ))}
@@ -277,17 +259,6 @@ function GroupsSection() {
   const report = useReport((s) => s.report);
   const update = useReport((s) => s.update);
   const groups = report.groups ?? [];
-  const addGroup = () =>
-    update((d) => {
-      d.groups ??= [];
-      let n = d.groups.length + 1;
-      while (d.groups.some((g) => g.name === `grupo${n}`)) n++;
-      const name = `grupo${n}`;
-      d.groups.push({ name, expression: 'Fields.campo' });
-      const r = d as ReportDefinition;
-      d.bands.push({ id: uniqueId(r, 'group_header'), type: 'groupHeader', group: name, height: 8, elements: [] });
-      d.bands.push({ id: uniqueId({ ...r, bands: [...r.bands] }, 'group_footer'), type: 'groupFooter', group: name, height: 8, elements: [] });
-    });
   return (
     <Section title="Grupos" actions={<button className="link" onClick={addGroup}>+ Grupo</button>}>
       {groups.length === 0 && <p className="muted small">Grupos quebram o detalhe por uma chave e permitem subtotais (SUM, COUNT...).</p>}

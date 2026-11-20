@@ -10,7 +10,7 @@ use nova_application::connection_resolver::ConnectionResolver;
 use nova_application::{ConnectionService, DocumentService, RenderService};
 use nova_connectors::ConnectorRegistry;
 use nova_connectors::store::{FsReportRepository, JsonProfileRepository};
-use nova_connectors::vault::OsKeyringVault;
+use nova_connectors::vault::{CachedVault, OsKeyringVault};
 use nova_engine::render::{FontLibrary, ReportCompiler};
 use tauri::Manager;
 
@@ -27,7 +27,8 @@ pub fn run() {
             let registry = Arc::new(ConnectorRegistry::with_builtin_drivers());
             let resolver = ConnectionResolver::new(
                 Arc::new(JsonProfileRepository::new(config_dir.join("connections.json"))),
-                Arc::new(OsKeyringVault::new()),
+                // Keychain lido uma vez por alias na sessão (senão o macOS pergunta a cada preview).
+                Arc::new(CachedVault::new(Arc::new(OsKeyringVault::new()))),
             );
             // Fontes do sistema carregadas uma vez (fidelidade WYSIWYG entre designer e PDF).
             let fonts = Arc::new(FontLibrary::load(true));

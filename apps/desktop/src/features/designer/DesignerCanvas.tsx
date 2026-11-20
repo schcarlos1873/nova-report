@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Layer, Line, Rect, Shape, Stage, Text, Transformer } from 'react-konva';
 import type Konva from 'konva';
-import type { Band, ElementType, ReportElement } from '../../domain/types';
-import { BAND_COLORS, bandTitle, clamp, printableWidth, pxPerMm, pxToMm, round, sortBands } from '../../domain/geometry';
+import type { Band, ReportElement } from '../../domain/types';
+import { BAND_COLORS, BAND_LABELS, bandTitle, clamp, printableWidth, pxPerMm, pxToMm, round, sortBands } from '../../domain/geometry';
 import { createElement } from '../../domain/factory';
 import { draftElement, moveElementToBand, useReport } from '../../state/reportStore';
 import { useUi } from '../../state/uiStore';
 import { ElementNode } from './ElementNode';
 import { snapRect, type Guide } from './guides';
+import { draggedPayload, endDrag, resolveFieldDrop, tableAt } from './dnd';
 
 const RULER = 22;
 const STRIP = 20;
@@ -22,13 +23,13 @@ interface BandLayout {
   areaH: number;
 }
 
-/** Dados arrastados do toolbox / painel de dados. */
-export interface DropPayload {
-  elementType?: ElementType;
-  field?: string;
+/** Destino destacado durante um arraste vindo do toolbox / painel de dados. */
+interface DropTarget {
+  bandIdx: number;
+  /** Retângulo (mm, relativo à banda) do elemento destino, quando houver. */
+  table?: { x: number; y: number; w: number; h: number };
+  hint: string;
 }
-
-export const DND_MIME = 'application/x-novareport';
 
 export function DesignerCanvas() {
   const report = useReport((s) => s.report);
@@ -39,6 +40,7 @@ export function DesignerCanvas() {
   const [guides, setGuides] = useState<{ bandIdx: number; guides: Guide[] }>();
   const [resizing, setResizing] = useState<{ bandId: string; heightMm: number }>();
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number }>();
+  const [dropTarget, setDropTarget] = useState<DropTarget>();
   const dragStart = useRef<Record<string, { x: number; y: number }>>({});
 
   const ppm = pxPerMm(zoom);
@@ -187,41 +189,87 @@ export function DesignerCanvas() {
   };
 
   // ---- soltar itens do toolbox / campos
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const raw = e.dataTransfer.getData(DND_MIME);
+  /** Converte o ponteiro do evento DOM em banda + posição (mm) já com encaixe. */
+  const dropPoint = (e: React.DragEvent) => {
     const stage = stageRef.current;
-    if (!raw || !stage) return;
+    if (!stage) return undefined;
     stage.setPointersPositions(e.nativeEvent);
     const pos = stage.getPointerPosition();
-    if (!pos) return;
+    if (!pos) return undefined;
     const bi = bandAt(pos.y);
-    if (bi < 0) return;
+    if (bi < 0) return undefined;
     const l = layout[bi];
-    const payload = JSON.parse(raw) as DropPayload;
     const g = snapToGrid ? gridMm : 0.5;
-    const x = round(clamp(pxToMm(pos.x - ORIGIN_X, zoom), 0, widthMm - 5), g);
-    const y = round(clamp(pxToMm(pos.y - l.areaTop, zoom), 0, l.band.height), g);
-    const r = useReport.getState().report;
-    let el: ReportElement;
+    const rawX = clamp(pxToMm(pos.x - ORIGIN_X, zoom), 0, widthMm);
+    const rawY = clamp(pxToMm(pos.y - l.areaTop, zoom), 0, l.band.height);
+    return { bi, l, rawX, rawY, x: round(Math.min(rawX, widthMm - 5), g), y: round(rawY, g) };
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    const payload = draggedPayload();
+    // sem payload em memória (ex.: arquivo do sistema) o canvas não aceita o drop
+    if (!payload) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    const pt = dropPoint(e);
+    if (!pt) return setDropTarget(undefined);
+    let target: DropTarget;
     if (payload.field) {
-      // campo solto em cabeçalho vira rótulo com o nome; nas demais bandas vira expressão
-      el = l.band.type === 'pageHeader' || l.band.type === 'reportHeader'
-        ? createElement(r, 'label', x, y, { text: payload.field, style: { ...createElement(r, 'label', 0, 0).style, bold: true } } as Partial<ReportElement>)
-        : createElement(r, 'expression', x, y, { expression: `Fields.${payload.field}` } as Partial<ReportElement>);
+      const r = resolveFieldDrop(report, pt.l.band, { ...payload, field: payload.field }, pt.x, pt.y, widthMm, e.altKey);
+      const t = r.tableColumn && tableAt(pt.l.band, pt.rawX, pt.rawY);
+      target = { bandIdx: pt.bi, hint: r.hint, table: t ? { x: t.x, y: t.y, w: t.width, h: t.height } : undefined };
+    } else {
+      target = { bandIdx: pt.bi, hint: `Inserir em ${BAND_LABELS[pt.l.band.type]}` };
+    }
+    if (target.bandIdx !== dropTarget?.bandIdx || target.hint !== dropTarget.hint) setDropTarget(target);
+  };
+
+  const onDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(undefined);
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDropTarget(undefined);
+    const payload = draggedPayload(e);
+    endDrag();
+    const pt = payload && dropPoint(e);
+    if (!payload || !pt) return;
+    const r = useReport.getState().report;
+    const band = pt.l.band;
+    if (payload.field) {
+      const res = resolveFieldDrop(r, band, { ...payload, field: payload.field }, pt.x, pt.y, widthMm, e.altKey);
+      update((d) => {
+        for (const ins of res.inserts) d.bands.find((b) => b.id === ins.bandId)?.elements.push(ins.element);
+        if (res.tableColumn) {
+          const t = draftElement(d, res.tableColumn.tableId);
+          if (t?.type === 'table') {
+            t.columns.push(res.tableColumn.column);
+            if (!t.dataSource && payload.query) t.dataSource = payload.query;
+            t.width = Math.max(t.width, t.columns.reduce((s, c) => s + c.width, 0));
+          }
+        }
+        if (res.bindDetail) {
+          const b = d.bands.find((x) => x.id === res.bindDetail!.bandId);
+          if (b) b.dataSource = res.bindDetail.query;
+        }
+      });
+      if (res.tableColumn) select([res.tableColumn.tableId], band.id);
+      // só o elemento solto: o rótulo/valor complementar fica em outra banda
+      else if (res.inserts[0]) select([res.inserts[0].element.id], band.id);
+      if (res.bindDetail) useUi.getState().notify(`Detalhe associado à query ${res.bindDetail.query}`);
     } else if (payload.elementType) {
-      el = createElement(r, payload.elementType, x, y);
-    } else return;
-    update((d) => {
-      d.bands.find((b) => b.id === l.band.id)?.elements.push(el);
-    });
-    select([el.id], l.band.id);
+      const el: ReportElement = createElement(r, payload.elementType, pt.x, pt.y);
+      update((d) => void d.bands.find((b) => b.id === band.id)?.elements.push(el));
+      select([el.id], band.id);
+    }
   };
 
   return (
     <div
       className="designer-scroll"
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
       <Stage
@@ -316,6 +364,21 @@ export function DesignerCanvas() {
                 stroke="#3B82F6" strokeWidth={1} dash={[4, 2]} listening={false} />
             );
           })}
+          {dropTarget && (() => {
+            const l = layout[dropTarget.bandIdx];
+            if (!l) return null;
+            const t = dropTarget.table;
+            const box = t
+              ? { x: ORIGIN_X + t.x * ppm, y: l.areaTop + t.y * ppm, w: t.w * ppm, h: t.h * ppm }
+              : { x: ORIGIN_X, y: l.areaTop, w: widthPx, h: l.areaH };
+            return (
+              <Group listening={false}>
+                <Rect x={box.x} y={box.y} width={box.w} height={box.h} fill="rgba(37,99,235,0.08)" stroke="#2563EB" strokeWidth={2} dash={[6, 3]} />
+                <Text x={ORIGIN_X} y={l.stripTop + 5} width={widthPx - 10} align="right" text={`⤓ ${dropTarget.hint}`}
+                  fontSize={11} fontStyle="bold" fill={selectedBandId === l.band.id ? '#FFFFFF' : '#1D4ED8'} />
+              </Group>
+            );
+          })()}
           <Transformer
             ref={trRef}
             rotateEnabled={false}

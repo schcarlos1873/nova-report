@@ -58,38 +58,46 @@ export function NumberInput({
   step = 0.5,
   min,
   max,
+  mixed,
 }: {
   value: number;
   onCommit: (v: number) => void;
   step?: number;
   min?: number;
   max?: number;
+  /** Valores diferentes na seleção: campo vazio com "—" até o usuário digitar. */
+  mixed?: boolean;
 }) {
-  const [v, setV] = useState(String(value));
-  useEffect(() => setV(String(Math.round(value * 100) / 100)), [value]);
+  const shown = mixed ? '' : String(Math.round(value * 100) / 100);
+  const [v, setV] = useState(shown);
+  useEffect(() => setV(shown), [shown]);
   const commit = () => {
     const n = Number(v.replace(',', '.'));
-    if (Number.isFinite(n) && n !== value) onCommit(min !== undefined ? Math.max(min, max !== undefined ? Math.min(max, n) : n) : n);
-    else setV(String(value));
+    // vazio nunca vira 0: apenas restaura o valor exibido
+    if (v.trim() !== '' && Number.isFinite(n) && (mixed || n !== value)) {
+      onCommit(min !== undefined ? Math.max(min, max !== undefined ? Math.min(max, n) : n) : n);
+    } else setV(shown);
   };
   return (
     <input
       type="number"
       step={step}
       value={v}
+      placeholder={mixed ? '—' : undefined}
+      title={mixed ? 'Valores diferentes na seleção' : undefined}
       onChange={(e) => setV(e.target.value)}
       onBlur={commit}
-      onKeyDown={(e) => e.key === 'Enter' && commit()}
+      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
     />
   );
 }
 
-export function ColorInput({ value, onCommit, allowEmpty }: { value?: string; onCommit: (v?: string) => void; allowEmpty?: boolean }) {
+export function ColorInput({ value, onCommit, allowEmpty, mixed }: { value?: string; onCommit: (v?: string) => void; allowEmpty?: boolean; mixed?: boolean }) {
   return (
-    <span className="color-input">
+    <span className="color-input" title={mixed ? 'Valores diferentes na seleção' : undefined}>
       <input type="color" value={value ?? '#ffffff'} onChange={(e) => onCommit(e.target.value)} />
-      <TextInput value={value ?? ''} placeholder={allowEmpty ? 'nenhuma' : ''} mono onCommit={(v) => onCommit(v.trim() || undefined)} />
-      {allowEmpty && value && (
+      <TextInput value={mixed ? '' : value ?? ''} placeholder={mixed ? '— (vários)' : allowEmpty ? 'nenhuma' : ''} mono onCommit={(v) => onCommit(v.trim() || undefined)} />
+      {allowEmpty && (value || mixed) && (
         <button className="icon-btn" title="Remover cor" onClick={() => onCommit(undefined)}>
           ×
         </button>
@@ -122,10 +130,16 @@ export function Select<T extends string>({
   );
 }
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Toggle({ checked, onChange, label, mixed }: { checked: boolean; onChange: (v: boolean) => void; label: string; mixed?: boolean }) {
   return (
-    <label className="toggle">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className="toggle" title={mixed ? 'Valores diferentes na seleção' : undefined}>
+      <input
+        type="checkbox"
+        checked={!mixed && checked}
+        ref={(el) => void (el && (el.indeterminate = !!mixed))}
+        aria-checked={mixed ? 'mixed' : checked}
+        onChange={(e) => onChange(mixed ? true : e.target.checked)}
+      />
       <span>{label}</span>
     </label>
   );

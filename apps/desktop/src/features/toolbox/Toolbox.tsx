@@ -1,9 +1,6 @@
 import type { ElementType } from '../../domain/types';
-import { DND_MIME, type DropPayload } from '../designer/DesignerCanvas';
-import { createElement } from '../../domain/factory';
-import { useReport } from '../../state/reportStore';
-import { useUi } from '../../state/uiStore';
-import { sortBands } from '../../domain/geometry';
+import { beginDrag, endDrag } from '../designer/dnd';
+import { insertElement } from '../../state/commands';
 
 const TOOLS: { type: ElementType; label: string; icon: string; hint: string }[] = [
   { type: 'label', label: 'Texto', icon: 'T', hint: 'Texto estático. Use {PAGE} e {PAGES} para paginação.' },
@@ -15,21 +12,6 @@ const TOOLS: { type: ElementType; label: string; icon: string; hint: string }[] 
 ];
 
 export function Toolbox() {
-  const update = useReport((s) => s.update);
-  const { selectedBandId, select } = useUi();
-
-  /** Clique adiciona na banda selecionada (ou na de detalhe). */
-  const add = (type: ElementType) => {
-    const r = useReport.getState().report;
-    const band = r.bands.find((b) => b.id === selectedBandId) ?? sortBands(r).find((b) => b.type === 'detail') ?? r.bands[0];
-    if (!band) return;
-    const el = createElement(r, type, 0, 0);
-    update((d) => {
-      d.bands.find((b) => b.id === band.id)?.elements.push(el);
-    });
-    select([el.id], band.id);
-  };
-
   return (
     <div className="toolbox">
       <p className="muted small">Arraste para uma banda ou clique para inserir na banda selecionada.</p>
@@ -40,12 +22,9 @@ export function Toolbox() {
             className="tool"
             title={t.hint}
             draggable
-            onDragStart={(e) => {
-              const payload: DropPayload = { elementType: t.type };
-              e.dataTransfer.setData(DND_MIME, JSON.stringify(payload));
-              e.dataTransfer.effectAllowed = 'copy';
-            }}
-            onClick={() => add(t.type)}
+            onDragStart={(e) => beginDrag(e, { elementType: t.type })}
+            onDragEnd={endDrag}
+            onClick={() => insertElement(t.type)}
           >
             <span className="tool-icon">{t.icon}</span>
             <span>{t.label}</span>
@@ -56,10 +35,13 @@ export function Toolbox() {
         <strong>Atalhos</strong>
         <ul>
           <li><kbd>⌘Z</kbd> / <kbd>⇧⌘Z</kbd> desfazer / refazer</li>
-          <li><kbd>⌘C</kbd> <kbd>⌘V</kbd> <kbd>⌘D</kbd> copiar, colar, duplicar</li>
+          <li><kbd>⌘C</kbd> <kbd>⌘X</kbd> <kbd>⌘V</kbd> <kbd>⌘D</kbd> copiar, recortar, colar, duplicar</li>
+          <li><kbd>⌘A</kbd> selecionar tudo (na banda selecionada)</li>
           <li><kbd>Setas</kbd> mover 1 grade (<kbd>⇧</kbd> ×5)</li>
           <li><kbd>Del</kbd> excluir · <kbd>Esc</kbd> limpar seleção</li>
           <li><kbd>⌘S</kbd> salvar · <kbd>⌘P</kbd> pré-visualizar</li>
+          <li><kbd>⌘+</kbd> <kbd>⌘−</kbd> <kbd>⌘0</kbd> zoom · <kbd>⌃F1</kbd> recolher Ribbon</li>
+          <li>Campo + <kbd>⌥</kbd> ao soltar: valor + rótulo de coluna</li>
         </ul>
       </div>
     </div>

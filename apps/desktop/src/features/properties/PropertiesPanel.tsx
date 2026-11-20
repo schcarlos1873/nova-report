@@ -6,6 +6,8 @@ import { draftElement, findElement, useReport } from '../../state/reportStore';
 import { useUi } from '../../state/uiStore';
 import { dialogs } from '../../infra/dialogs';
 import { ExpressionField } from './ExpressionEditor';
+import { FORMATS } from '../../domain/formats';
+import { MIXED, SINGLE_BANDS, addBand, arrange, common, editSelection, hasText, setFormat, setStyle } from '../../state/commands';
 
 const ALIGN: { value: Align; label: string }[] = [
   { value: 'left', label: 'Esquerda' },
@@ -13,21 +15,18 @@ const ALIGN: { value: Align; label: string }[] = [
   { value: 'right', label: 'Direita' },
   { value: 'justify', label: 'Justificado' },
 ];
+const TYPE_NAMES: Record<ReportElement['type'], string> = {
+  label: 'Texto',
+  expression: 'Expressão',
+  image: 'Imagem',
+  line: 'Linha',
+  rectangle: 'Retângulo',
+  table: 'Tabela',
+};
 const VALIGN: { value: VerticalAlign; label: string }[] = [
   { value: 'top', label: 'Topo' },
   { value: 'middle', label: 'Meio' },
   { value: 'bottom', label: 'Base' },
-];
-const FORMATS = [
-  { value: '', label: '(nenhum)' },
-  { value: 'currency:BRL', label: 'Moeda R$' },
-  { value: 'currency:USD', label: 'Moeda US$' },
-  { value: 'number:2', label: 'Número 2 casas' },
-  { value: 'number:0', label: 'Número inteiro' },
-  { value: 'percent:1', label: 'Percentual' },
-  { value: 'date:%d/%m/%Y', label: 'Data dd/mm/aaaa' },
-  { value: 'date:%d/%m/%Y %H:%M', label: 'Data e hora' },
-  { value: 'upper', label: 'MAIÚSCULAS' },
 ];
 
 export function PropertiesPanel() {
@@ -59,12 +58,11 @@ function ElementProps({ el, band }: { el: ReportElement; band: Band }) {
   const report = useReport((s) => s.report);
   const queries = report.dataSources.flatMap((d) => d.queries.map((q) => q.name));
   const setStyle = <K extends keyof Style>(k: K, v: Style[K]) => edit(`style.${k}`, (e) => void (e.style[k] = v as never));
-  const typeNames = { label: 'Texto', expression: 'Expressão', image: 'Imagem', line: 'Linha', rectangle: 'Retângulo', table: 'Tabela' };
-  const hasText = el.type === 'label' || el.type === 'expression' || el.type === 'table';
+  const textual = hasText(el);
 
   return (
     <div className="props">
-      <Section title={`${typeNames[el.type]} · ${el.id}`}>
+      <Section title={`${TYPE_NAMES[el.type]} · ${el.id}`}>
         <p className="muted small">Banda: {BAND_LABELS[band.type]}{band.group ? ` (${band.group})` : ''}</p>
         {el.type === 'label' && (
           <Field label="Texto">
@@ -132,7 +130,7 @@ function ElementProps({ el, band }: { el: ReportElement; band: Band }) {
         </div>
       </Section>
 
-      {hasText && (
+      {textual && (
         <Section title="Texto">
           <Field label="Fonte">
             <input list="font-list" value={el.style.fontFamily} onChange={(e) => setStyle('fontFamily', e.target.value)} />
@@ -237,45 +235,117 @@ function TableProps({
 }
 
 function MultiProps({ ids }: { ids: string[] }) {
-  const update = useReport((s) => s.update);
   const report = useReport((s) => s.report);
+  const fonts = useUi((s) => s.info?.fonts ?? []);
   const els = ids.map((id) => findElement(report, id)?.element).filter((e): e is ReportElement => !!e);
-  const align = (fn: (els: ReportElement[]) => (e: ReportElement) => Partial<ReportElement>) =>
-    update((d) => {
-      const f = fn(els);
-      for (const id of ids) {
-        const e = draftElement(d, id);
-        if (e) Object.assign(e, f(e as ReportElement));
-      }
+  const textEls = els.filter(hasText);
+  const allText = textEls.length === els.length;
+  const exprEls = els.filter((e) => e.type === 'expression');
+  const bands = new Set(ids.map((id) => findElement(report, id)?.band.id));
+  const counts = Object.entries(
+    els.reduce<Record<string, number>>((acc, e) => ({ ...acc, [TYPE_NAMES[e.type]]: (acc[TYPE_NAMES[e.type]] ?? 0) + 1 }), {}),
+  ).map(([t, n]) => `${t}: ${n}`);
+
+  /** Valor comum ou estado misto de uma propriedade sobre um conjunto. */
+  const val = <T,>(set: ReportElement[], get: (e: ReportElement) => T) => {
+    const v = common(set, get);
+    return { value: v === MIXED || v === undefined ? undefined : v, mixed: v === MIXED };
+  };
+  const geom = (k: 'x' | 'y' | 'width' | 'height') => val(els, (e) => e[k]);
+  const st = <K extends keyof Style>(k: K, set = els) => val(set, (e) => e.style[k]);
+  const setGeom = (k: 'x' | 'y' | 'width' | 'height', v: number) =>
+    editSelection(k, (e) => {
+      e[k] = v;
+      if (e.type === 'line' && k === 'height' && e.direction !== 'vertical' && e.direction !== 'diagonal') e.height = 0;
     });
+
+  const font = st('fontFamily', textEls);
+  const size = st('fontSize', textEls);
+  const color = st('color', textEls);
+  const bold = st('bold', textEls);
+  const italic = st('italic', textEls);
+  const underline = st('underline', textEls);
+  const align = st('align', textEls);
+  const valign = st('verticalAlign', textEls);
+  const bg = st('background');
+  const bw = st('borderWidth');
+  const bc = st('borderColor');
+  const pad = st('padding');
+  const fmt = val(exprEls, (e) => (e.type === 'expression' ? e.format ?? '' : ''));
+
   return (
     <div className="props">
       <Section title={`${ids.length} elementos selecionados`}>
+        <p className="muted small">
+          {counts.join(', ')} · {bands.size > 1 ? `${bands.size} bandas` : '1 banda'}. Campos com “—” têm valores diferentes; só o que você alterar é aplicado a todos.
+        </p>
         <div className="btn-grid">
-          <button onClick={() => align((a) => { const x = Math.min(...a.map((e) => e.x)); return () => ({ x }); })}>⇤ Esquerda</button>
-          <button onClick={() => align((a) => { const r = Math.max(...a.map((e) => e.x + e.width)); return (e) => ({ x: r - e.width }); })}>Direita ⇥</button>
-          <button onClick={() => align((a) => { const y = Math.min(...a.map((e) => e.y)); return () => ({ y }); })}>⤒ Topo</button>
-          <button onClick={() => align((a) => { const b = Math.max(...a.map((e) => e.y + e.height)); return (e) => ({ y: b - e.height }); })}>Base ⤓</button>
-          <button onClick={() => align((a) => { const w = Math.max(...a.map((e) => e.width)); return () => ({ width: w }); })}>Mesma largura</button>
-          <button onClick={() => align((a) => { const h = Math.max(...a.map((e) => e.height)); return () => ({ height: h }); })}>Mesma altura</button>
-          <button
-            onClick={() =>
-              align((a) => {
-                const sorted = [...a].sort((p, q) => p.x - q.x);
-                const first = sorted[0];
-                const last = sorted[sorted.length - 1];
-                const totalW = sorted.reduce((s, e) => s + e.width, 0);
-                const gap = sorted.length > 1 ? (last.x + last.width - first.x - totalW) / (sorted.length - 1) : 0;
-                const pos = new Map<string, number>();
-                let x = first.x;
-                for (const e of sorted) { pos.set(e.id, x); x += e.width + gap; }
-                return (e) => ({ x: Math.round((pos.get(e.id) ?? e.x) * 10) / 10 });
-              })
-            }
-          >
-            ⇹ Distribuir
-          </button>
+          <button onClick={() => arrange('left')}>⇤ Esquerda</button>
+          <button onClick={() => arrange('right')}>Direita ⇥</button>
+          <button onClick={() => arrange('top')}>⤒ Topo</button>
+          <button onClick={() => arrange('bottom')}>Base ⤓</button>
+          <button onClick={() => arrange('sameWidth')}>Mesma largura</button>
+          <button onClick={() => arrange('sameHeight')}>Mesma altura</button>
+          <button disabled={els.length < 3} title={els.length < 3 ? 'Selecione 3 ou mais elementos' : undefined} onClick={() => arrange('distributeH')}>⇹ Distribuir</button>
+          <button disabled={els.length < 3} title={els.length < 3 ? 'Selecione 3 ou mais elementos' : undefined} onClick={() => arrange('distributeV')}>↕ Distribuir vert.</button>
         </div>
+      </Section>
+
+      <Section title="Posição e tamanho (mm)">
+        <div className="grid2">
+          {(['x', 'y', 'width', 'height'] as const).map((k) => {
+            const g = geom(k);
+            return (
+              <Field key={k} label={{ x: 'X', y: 'Y', width: 'Largura', height: 'Altura' }[k]}>
+                <NumberInput value={g.value ?? 0} mixed={g.mixed} min={0} onCommit={(v) => setGeom(k, v)} />
+              </Field>
+            );
+          })}
+        </div>
+        {bands.size > 1 && <p className="muted small">Y é relativo ao topo de cada banda.</p>}
+      </Section>
+
+      {textEls.length > 0 && (
+        <Section title={allText ? 'Texto' : `Texto (${textEls.length} de ${els.length})`}>
+          <Field label="Fonte">
+            <input
+              list="font-list-multi"
+              defaultValue={font.value ?? ''}
+              key={font.value ?? 'mixed'}
+              placeholder={font.mixed ? '— (várias)' : ''}
+              onBlur={(e) => e.target.value && e.target.value !== font.value && setStyle('fontFamily', e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+            />
+            <datalist id="font-list-multi">{fonts.map((f) => <option key={f} value={f} />)}</datalist>
+          </Field>
+          <div className="grid2">
+            <Field label="Tamanho (pt)"><NumberInput value={size.value ?? 10} mixed={size.mixed} step={0.5} min={4} onCommit={(v) => setStyle('fontSize', v)} /></Field>
+            <Field label="Cor"><ColorInput value={color.value} mixed={color.mixed} onCommit={(v) => setStyle('color', v ?? '#000000')} /></Field>
+          </div>
+          <div className="row gap">
+            <Toggle label="Negrito" checked={!!bold.value} mixed={bold.mixed} onChange={(v) => setStyle('bold', v)} />
+            <Toggle label="Itálico" checked={!!italic.value} mixed={italic.mixed} onChange={(v) => setStyle('italic', v)} />
+            <Toggle label="Sublinhado" checked={!!underline.value} mixed={underline.mixed} onChange={(v) => setStyle('underline', v)} />
+          </div>
+          <div className="grid2">
+            <Field label="Alinhamento"><Select value={align.value} options={ALIGN} onChange={(v) => setStyle('align', v)} /></Field>
+            <Field label="Vertical"><Select value={valign.value} options={VALIGN} onChange={(v) => setStyle('verticalAlign', v)} /></Field>
+          </div>
+          {exprEls.length > 0 && (
+            <Field label={exprEls.length === els.length ? 'Formato' : `Formato (${exprEls.length} campo(s))`}>
+              <Select value={fmt.mixed ? undefined : fmt.value ?? ''} options={FORMATS} onChange={(v) => setFormat(v)} />
+            </Field>
+          )}
+        </Section>
+      )}
+
+      <Section title="Aparência">
+        <Field label="Fundo"><ColorInput value={bg.value} mixed={bg.mixed} allowEmpty onCommit={(v) => setStyle('background', v)} /></Field>
+        <div className="grid2">
+          <Field label="Borda (pt)"><NumberInput value={bw.value ?? 0} mixed={bw.mixed} step={0.25} min={0} onCommit={(v) => setStyle('borderWidth', v)} /></Field>
+          <Field label="Espaçamento (mm)"><NumberInput value={pad.value ?? 0} mixed={pad.mixed} step={0.5} min={0} onCommit={(v) => setStyle('padding', v)} /></Field>
+        </div>
+        <Field label="Cor da borda"><ColorInput value={bc.value} mixed={bc.mixed} onCommit={(v) => setStyle('borderColor', v ?? '#000000')} /></Field>
       </Section>
     </div>
   );
@@ -369,12 +439,8 @@ function ReportProps() {
       </Section>
       <Section title="Bandas">
         <div className="btn-grid">
-          {(['reportHeader', 'pageHeader', 'detail', 'pageFooter', 'reportFooter'] as const).map((t) => (
-            <button
-              key={t}
-              disabled={existing.has(t)}
-              onClick={() => update((d) => void d.bands.push({ id: `${t}_${Date.now() % 10000}`, type: t, height: t === 'detail' ? 8 : 12, elements: [] }))}
-            >
+          {SINGLE_BANDS.map((t) => (
+            <button key={t} disabled={existing.has(t)} title={existing.has(t) ? 'O relatório já tem esta banda' : undefined} onClick={() => addBand(t)}>
               + {BAND_LABELS[t]}
             </button>
           ))}
