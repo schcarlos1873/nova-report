@@ -43,4 +43,5 @@ export const api = {
     call<QueryPreview>('preview_report_query', { report, queryName, params, reportPath, limit }),
   parameterValues: (report: ReportDefinition, name: string, params: Params, reportPath?: string, limit?: number) =>
     call<ParameterValues>('parameter_values', { report, name, params, reportPath, limit }),
+  readFileDataUri: (path: string) => call<string>('read_file_data_uri', { path }),
 };

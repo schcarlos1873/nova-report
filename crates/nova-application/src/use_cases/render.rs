@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use nova_domain::ParamValue;
-use nova_domain::report::ReportDefinition;
+use nova_domain::report::{ImageKind, ReportDefinition};
 use nova_engine::data::{DataContext, DataRequest};
 use nova_engine::layout::ReportProcessor;
 use nova_engine::render::{RenderedReport, ReportCompiler, TypstTranspiler};
@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::connection_resolver::ConnectionResolver;
 use crate::ports::ConnectorGateway;
-use crate::use_cases::connections::fetch_options;
+use crate::use_cases::connections::{fetch_options, query_sql};
 use crate::{AppError, AppResult, params};
 
 /// Dados reaproveitados entre previews quando só o layout muda (meta: < 50 ms).
@@ -128,7 +128,7 @@ impl RenderService {
             let provider = self.gateway.provider(config)?;
             // queries que só listam valores de parâmetros não fazem parte dos dados do relatório
             for q in ds.queries.iter().filter(|q| !def.is_parameter_only_query(&q.name)) {
-                requests.push(DataRequest { name: q.name.clone(), provider: provider.clone(), query: q.sql.clone() });
+                requests.push(DataRequest { name: q.name.clone(), provider: provider.clone(), query: query_sql(ds, q)? });
             }
         }
         let param_labels = self.param_labels(def, &parameters, base_dir).await?;
@@ -165,6 +165,24 @@ impl RenderService {
         futures::future::join_all(lookups).await.into_iter().collect()
     }
 
+    /// Imagens `url` são baixadas aqui e passadas ao engine como `data:` URI (o engine não faz I/O de rede).
+    async fn inline_url_images(&self, def: &ReportDefinition) -> AppResult<ReportDefinition> {
+        use base64::Engine as _;
+        let mut def = def.clone();
+        let downloads = def.images.iter().enumerate().filter(|(_, i)| i.kind == ImageKind::Url).map(|(n, img)| {
+            let url = img.value.clone();
+            async move { Ok::<_, AppError>((n, self.gateway.fetch_url(&url).await?)) }
+        });
+        for r in futures::future::join_all(downloads).await {
+            let (n, (bytes, mime)) = r?;
+            let img = &mut def.images[n];
+            let mime = img.mime_type.clone().or(mime).unwrap_or_else(|| guess_mime(&img.value).into());
+            img.value = format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes));
+            img.kind = ImageKind::Embedded;
+        }
+        Ok(def)
+    }
+
     async fn render(
         &self,
         def: &ReportDefinition,
@@ -174,7 +192,7 @@ impl RenderService {
     ) -> AppResult<(RenderedReport, DataContext, RenderStats)> {
         def.ensure_valid()?;
         let (data, mut stats) = self.load_data(def, raw_params, base_dir.as_deref(), refresh).await?;
-        let (def, data2) = (def.clone(), data.clone());
+        let (def, data2) = (self.inline_url_images(def).await?, data.clone());
         let start = Instant::now();
         let rendered = tokio::task::spawn_blocking(move || ReportProcessor::new(&def, &data2, base_dir.as_deref()).process())
             .await
@@ -262,5 +280,16 @@ impl RenderService {
                     .map_err(|e| AppError::Join(e.to_string()))?
             }
         }
+    }
+}
+
+fn guess_mime(url: &str) -> &'static str {
+    let path = url.split(['?', '#']).next().unwrap_or("").to_lowercase();
+    match path.rsplit_once('.').map(|(_, e)| e) {
+        Some("svg") => "image/svg+xml",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        _ => "image/png",
     }
 }

@@ -14,11 +14,11 @@ async function bootstrap() {
       if (demo === 'cascata') useReport.getState().load(cascadeReport, '/demo/vendas_cascata.nrep');
       else useReport.getState().load(demoReport, '/demo/vendas_por_regiao.nrep');
     }
-    // ?tab=data|connections e ?mode=preview facilitam inspeção visual automatizada
+    // ?dialog=parameter|dataSource|dataset|image|group|connections e ?mode=preview facilitam inspeção visual automatizada
     const { useUi } = await import('./state/uiStore');
     const q = new URLSearchParams(location.search);
-    const tab = q.get('tab');
-    if (tab === 'data' || tab === 'connections' || tab === 'toolbox') useUi.getState().set({ leftTab: tab });
+    const dialog = q.get('dialog');
+    if (dialog) useUi.getState().set({ dialog: { kind: dialog, target: q.get('target') ?? undefined } as never });
     if (q.get('mode') === 'preview') useUi.getState().set({ mode: 'preview' });
   }
   ReactDOM.createRoot(document.getElementById('root')!).render(

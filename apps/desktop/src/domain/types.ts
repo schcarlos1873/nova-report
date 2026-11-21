@@ -82,10 +82,40 @@ export interface Band {
   elements: ReportElement[];
 }
 
+export type QueryKind = 'text' | 'storedProcedure';
+
+export interface ProcedureParam {
+  /** Nome na procedure (`@param1`). */
+  name: string;
+  /** `:parametro` do relatório ou literal SQL. */
+  value: string;
+  passNull?: boolean;
+}
+
 export interface QueryDef {
   name: string;
   sql: string;
+  /** Ausente = `text`. */
+  kind?: QueryKind;
+  procedure?: string;
+  procedureParams?: ProcedureParam[];
 }
+
+export type ImageKind = 'file' | 'url' | 'embedded' | 'database';
+
+export interface ImageResource {
+  name: string;
+  kind: ImageKind;
+  /** file: caminho; url: http(s); embedded: data URI. */
+  value?: string;
+  mimeType?: string;
+  /** database: query e campo lidos a cada registro. */
+  query?: string;
+  field?: string;
+}
+
+/** `source` de um elemento imagem que aponta para `images`. */
+export const IMAGE_REF_PREFIX = 'image:';
 
 export interface DataSourceDef {
   id: string;
@@ -150,6 +180,7 @@ export interface ReportDefinition {
   meta: ReportMeta;
   dataSources: DataSourceDef[];
   parameters: ParameterDef[];
+  images?: ImageResource[];
   groups?: GroupDef[];
   bands: Band[];
 }

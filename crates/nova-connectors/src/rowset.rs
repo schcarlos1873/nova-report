@@ -7,6 +7,17 @@ use polars::prelude::DataFrame;
 
 use crate::ConnectorResult;
 
+/// Coluna binária (BLOB/bytea/varbinary) vira texto base64; imagens reconhecidas viram `data:` URI,
+/// prontas para um elemento imagem do tipo `database`.
+pub(crate) fn binary_cell(bytes: &[u8]) -> CellValue {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    CellValue::Text(match nova_engine::layout::sniff_image_mime(bytes) {
+        Some(mime) => format!("data:{mime};base64,{b64}"),
+        None => b64,
+    })
+}
+
 #[derive(Debug, Default)]
 pub struct RowSet {
     /// (nome, tipo nativo opcional)

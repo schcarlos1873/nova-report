@@ -28,6 +28,7 @@ async-trait.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 polars = { workspace = true, features = ["sql"] }
+base64.workspace = true
 rusqlite = { version = "0.32", features = ["bundled", "column_decltype"] }
 sqlx = { version = "0.8.6", optional = true, default-features = false, features = ["runtime-tokio", "tls-rustls", "chrono", "rust_decimal"] }
 rust_decimal = "1"

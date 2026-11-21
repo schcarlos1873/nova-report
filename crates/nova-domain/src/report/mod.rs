@@ -7,15 +7,17 @@ mod band;
 mod data_source;
 mod element;
 mod geometry;
+mod image;
 pub mod sql;
 mod validation;
 
 pub use band::{Band, BandType, GroupDef};
-pub use data_source::{DataSourceDef, ProviderKind, QueryDef};
+pub use data_source::{DataSourceDef, ProcedureParam, ProviderKind, QueryDef, QueryKind};
 pub use element::{
     Align, ElementKind, ImageFit, LineDirection, ReportElement, Style, TableColumn, TableSpec,
     VerticalAlign,
 };
+pub use image::{IMAGE_REF_PREFIX, ImageKind, ImageResource, image_ref};
 pub use geometry::{Margins, Orientation, PageGeometry, PaperSize, PaperSizeMm};
 pub use validation::{Severity, ValidationIssue};
 
@@ -41,9 +43,14 @@ pub struct ReportDefinition {
     #[serde(default)]
     pub parameters: Vec<ParameterDef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImageResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<GroupDef>,
     #[serde(default)]
     pub bands: Vec<Band>,
+    /// Caminho do `.nrep` de origem (não serializado): alimenta `Report.FileName`/`Report.FilePath`.
+    #[serde(skip)]
+    pub source_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -129,6 +136,7 @@ impl ReportDefinition {
             },
             data_sources: vec![],
             parameters: vec![],
+            images: vec![],
             groups: vec![],
             bands: vec![
                 Band::new(BandType::ReportHeader, 20.0),
@@ -137,6 +145,7 @@ impl ReportDefinition {
                 Band::new(BandType::PageFooter, 10.0),
                 Band::new(BandType::ReportFooter, 15.0),
             ],
+            source_path: None,
         };
         def.normalize();
         def
@@ -212,6 +221,10 @@ impl ReportDefinition {
         self.data_sources
             .iter()
             .find_map(|ds| ds.queries.iter().find(|q| q.name == name).map(|q| (ds, q)))
+    }
+
+    pub fn find_image(&self, name: &str) -> Option<&ImageResource> {
+        self.images.iter().find(|i| i.name == name)
     }
 
     pub fn all_queries(&self) -> impl Iterator<Item = (&DataSourceDef, &QueryDef)> {

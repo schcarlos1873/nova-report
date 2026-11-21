@@ -8,6 +8,7 @@ import { findElement, useReport } from '../../state/reportStore';
 import { useUi, type RibbonTab } from '../../state/uiStore';
 import * as cmd from '../../state/commands';
 import { MIXED, common, hasText, type Mixed } from '../../state/commands';
+import { beginDrag, endDrag, type DropPayload } from '../designer/dnd';
 
 const TABS: { id: RibbonTab; label: string }[] = [
   { id: 'home', label: 'Página Inicial' },
@@ -44,10 +45,13 @@ interface BtnProps {
   large?: boolean;
   /** Mostra só o ícone (o rótulo continua acessível e no tooltip). */
   compact?: boolean;
+  /** Torna o botão arrastável (ex.: elementos de Inserir soltos no canvas). */
+  drag?: DropPayload;
 }
 
-function Btn({ icon, label, onClick, disabled, shortcut, pressed, large, compact }: BtnProps) {
-  const tip = [label, shortcut && `(${shortcut})`, disabled && `— ${disabled}`].filter(Boolean).join(' ');
+function Btn({ icon, label, onClick, disabled, shortcut, pressed, large, compact, drag }: BtnProps) {
+  const tip = [label, shortcut && `(${shortcut})`, drag && !disabled && '— clique ou arraste para o relatório', disabled && `— ${disabled}`].filter(Boolean).join(' ');
+  const draggable = !!drag && !disabled;
   return (
     <button
       type="button"
@@ -57,6 +61,9 @@ function Btn({ icon, label, onClick, disabled, shortcut, pressed, large, compact
       title={tip}
       aria-label={compact ? label : undefined}
       aria-pressed={pressed === undefined ? undefined : pressed === MIXED ? 'mixed' : pressed}
+      draggable={draggable || undefined}
+      onDragStart={draggable ? (e) => beginDrag(e, drag) : undefined}
+      onDragEnd={draggable ? endDrag : undefined}
     >
       <span className="rb-icon" aria-hidden>{icon}</span>
       {!compact && <span className="rb-label">{label}</span>}
@@ -64,12 +71,22 @@ function Btn({ icon, label, onClick, disabled, shortcut, pressed, large, compact
   );
 }
 
-function Group({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean }) {
+function Group({ label, children, wide, info }: { label: string; children: ReactNode; wide?: boolean; info?: string }) {
   return (
     <div className={`rb-group${wide ? ' wide' : ''}`} role="group" aria-label={label}>
+      {info && <InfoTip text={info} />}
       <div className="rb-group-body">{children}</div>
       <div className="rb-group-label">{label}</div>
     </div>
+  );
+}
+
+/** Ícone (i) com a explicação em tooltip (também ao focar pelo teclado). */
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="rb-info" tabIndex={0} role="img" aria-label={text} title={text}>
+      i
+    </span>
   );
 }
 
@@ -430,9 +447,13 @@ export function Ribbon() {
 
           {ui.ribbonTab === 'insert' && (
             <>
-              <Group label="Elementos">
+              <Group
+                label="Elementos"
+                info={`Inserção por clique vai para ${selectedBand ? BAND_LABELS[selectedBand.type] : 'a banda selecionada (ou o Detalhe)'}. Também é possível arrastar estes elementos, ou campos, parâmetros e imagens de Dados do Relatório, para uma banda.`}
+              >
                 {insertTools.map((t) => (
                   <Btn key={t.type} large icon={t.icon} label={t.label} onClick={() => cmd.insertElement(t.type)}
+                    drag={{ elementType: t.type, label: t.label }}
                     disabled={off(true, '')} />
                 ))}
               </Group>
@@ -448,10 +469,6 @@ export function Ribbon() {
                   <Btn icon="⧉" label="Grupo (cabeçalho + rodapé)" onClick={cmd.addGroup} disabled={off(true, '')} />
                 </Stack>
               </Group>
-              <p className="rb-note">
-                Inserção por clique vai para {selectedBand ? <strong>{BAND_LABELS[selectedBand.type]}</strong> : 'a banda selecionada (ou o Detalhe)'}.
-                Também é possível arrastar do painel Elementos ou campos do painel Dados.
-              </p>
             </>
           )}
 
@@ -459,12 +476,12 @@ export function Ribbon() {
             <>
               <Group label="Fontes">
                 <Btn large icon="🗄" label="Nova fonte" onClick={cmd.addDataSource} />
-                <Btn large icon="🔌" label="Conexões" onClick={() => ui.set({ leftTab: 'connections', showLeft: true, mode: 'design' })} />
+                <Btn large icon="🔌" label="Conexões" onClick={cmd.openConnections} />
               </Group>
               <Group label="Campos">
                 <Btn large icon="⟳" label="Atualizar campos" onClick={cmd.refreshAllFields}
                   disabled={report.dataSources.some((d) => d.queries.length) ? false : 'Crie uma fonte com query primeiro'} />
-                <Btn large icon="☷" label="Painel Dados" onClick={() => ui.set({ leftTab: 'data', showLeft: true, mode: 'design' })} />
+                <Btn large icon="☷" label="Dados do Relatório" onClick={() => ui.set({ showLeft: true, mode: 'design' })} />
               </Group>
               <Group label="Relatório">
                 <Stack>
@@ -541,7 +558,7 @@ export function Ribbon() {
               </Group>
               <Group label="Painéis">
                 <Stack>
-                  <Btn icon="◧" label="Elementos / Dados" pressed={ui.showLeft} onClick={() => ui.set({ showLeft: !ui.showLeft })} disabled={off(true, '')} />
+                  <Btn icon="◧" label="Dados do Relatório" pressed={ui.showLeft} onClick={() => ui.set({ showLeft: !ui.showLeft })} disabled={off(true, '')} />
                   <Btn icon="◨" label="Propriedades" pressed={ui.showRight} onClick={() => ui.set({ showRight: !ui.showRight })} disabled={off(true, '')} />
                 </Stack>
               </Group>

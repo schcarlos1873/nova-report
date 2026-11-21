@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use super::{BandType, ElementKind, ReportDefinition, sql};
+use super::{BandType, ElementKind, ImageKind, ReportDefinition, image_ref, sql};
 use crate::params::ParamType;
 
 const TOLERANCE_MM: f64 = 0.01;
@@ -75,11 +75,23 @@ pub(super) fn validate(def: &ReportDefinition) -> Vec<ValidationIssue> {
             if !query_names.insert(q.name.as_str()) {
                 issues.error(format!("dataSources[{}].queries[{}]", ds.id, q.name), "nome de query duplicado");
             }
-            if q.sql.trim().is_empty() {
-                issues.error(format!("dataSources[{}].queries[{}]", ds.id, q.name), "query vazia");
+            let qpath = format!("dataSources[{}].queries[{}]", ds.id, q.name);
+            if q.is_procedure() {
+                if q.procedure.as_deref().unwrap_or("").trim().is_empty() {
+                    issues.error(&qpath, "informe o nome da stored procedure");
+                } else if q.effective_sql(ds.provider).is_none() {
+                    issues.error(&qpath, format!("o provider {} não suporta stored procedures", ds.provider.id()));
+                }
+                for p in &q.procedure_params {
+                    if p.name.trim().is_empty() {
+                        issues.error(&qpath, "parâmetro da procedure sem nome");
+                    }
+                }
+            } else if q.sql.trim().is_empty() {
+                issues.error(&qpath, "query vazia");
             }
             if ds.provider.is_sql() {
-                for p in sql::named_parameters(&q.sql) {
+                for p in sql::named_parameters(&q.parameter_text()) {
                     if !declared_params.contains(p.as_str()) {
                         issues.error(
                             format!("dataSources[{}].queries[{}]", ds.id, q.name),
@@ -120,7 +132,7 @@ pub(super) fn validate(def: &ReportDefinition) -> Vec<ValidationIssue> {
                     }
                     if ds.provider.is_sql() {
                         // a lista só é recarregada quando um parâmetro de `dependsOn` muda
-                        for used in sql::named_parameters(&q.sql) {
+                        for used in sql::named_parameters(&q.parameter_text()) {
                             if used == p.name {
                                 issues.error(&path, format!("a query de valores '{}' usa o próprio parâmetro", q.name));
                             } else if !p.depends_on.iter().any(|d| d == &used) {
@@ -136,6 +148,30 @@ pub(super) fn validate(def: &ReportDefinition) -> Vec<ValidationIssue> {
     }
     if let Some(cycle) = dependency_cycle(&def.parameters) {
         issues.error("parameters", format!("dependência circular entre parâmetros: {}", cycle.join(" → ")));
+    }
+
+    // ---- imagens
+    let mut image_names = HashSet::new();
+    for img in &def.images {
+        let path = format!("images[{}]", img.name);
+        if img.name.trim().is_empty() {
+            issues.error(&path, "imagem sem nome");
+        } else if !image_names.insert(img.name.as_str()) {
+            issues.error(&path, "nome de imagem duplicado");
+        }
+        match img.kind {
+            ImageKind::Database => match (&img.query, &img.field) {
+                (Some(q), _) if !query_names.contains(q.as_str()) => issues.error(&path, format!("query '{q}' não existe")),
+                (Some(_), Some(f)) if !f.trim().is_empty() => {}
+                _ => issues.error(&path, "informe a query e o campo da imagem"),
+            },
+            _ if img.value.trim().is_empty() => issues.warn(&path, "imagem sem origem"),
+            ImageKind::Embedded if !img.value.starts_with("data:") => issues.error(&path, "imagem embutida deve ser uma data URI"),
+            ImageKind::Url if !(img.value.starts_with("http://") || img.value.starts_with("https://")) => {
+                issues.error(&path, "URL deve começar com http:// ou https://")
+            }
+            _ => {}
+        }
     }
 
     // ---- grupos
@@ -207,6 +243,13 @@ pub(super) fn validate(def: &ReportDefinition) -> Vec<ValidationIssue> {
                 }
                 ElementKind::Image { source, .. } if source.trim().is_empty() => {
                     issues.warn(&epath, "imagem sem origem");
+                }
+                ElementKind::Image { source, .. } => {
+                    if let Some(name) = image_ref(source) {
+                        if !image_names.contains(name) {
+                            issues.error(&epath, format!("imagem '{name}' não existe em images"));
+                        }
+                    }
                 }
                 ElementKind::Table(t) => {
                     if !query_names.contains(t.data_source.as_str()) {

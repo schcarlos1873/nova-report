@@ -31,4 +31,8 @@ pub trait ConnectorGateway: Send + Sync {
     /// Envolve a query com paginação no dialeto do driver.
     fn paginate(&self, kind: ProviderKind, sql: &str, limit: usize) -> String;
     fn select_all(&self, kind: ProviderKind, schema: Option<&str>, table: &str) -> String;
+    /// Baixa um recurso http(s) (imagens `url` do relatório). Devolve os bytes e o `Content-Type`.
+    async fn fetch_url(&self, url: &str) -> AppResult<(Vec<u8>, Option<String>)> {
+        Err(crate::AppError::Invalid(format!("download de URL indisponível: {url}")))
+    }
 }

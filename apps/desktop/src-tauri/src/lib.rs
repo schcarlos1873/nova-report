@@ -60,6 +60,7 @@ pub fn run() {
             commands::preview_sql,
             commands::preview_report_query,
             commands::parameter_values,
+            commands::read_file_data_uri,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o NovaReport Builder");

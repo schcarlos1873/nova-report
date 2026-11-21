@@ -5,12 +5,13 @@
 //! * `Params.<nome>` — parâmetros do relatório (array quando o parâmetro aceita vários valores);
 //! * `ParamLabels.<nome>` (ou `Params.<nome>.Label`) — rótulo dos valores escolhidos, no mesmo formato de `Params`;
 //! * `Group.Sum_<coluna>` / `Group.Count` — agregados do escopo atual (grupo ou relatório);
-//! * `Report.Title`, `Report.RecordCount`;
+//! * `Report.Title`, `Report.RecordCount`, `Report.Author`, `Report.Description`, `Report.FileName`,
+//!   `Report.FilePath`, `Report.ExecutionTime` (início da geração, `AAAA-MM-DD HH:MM:SS`);
 //! * `Format.currency(v, "BRL")`, `Format.number(v, 2)`, `Format.percent(v, 1)`, `Format.date(v, fmt)`.
 //!
 //! Funções: `SUM`, `AVG`, `MIN`, `MAX`, `COUNT`, `DISTINCT_COUNT`, `RUNNING_SUM`, `IIF`/`IFF`,
 //! `FORMAT_DATE`, `FormatBRL`, `ROUND`, `ABS`, `UPPER`, `LOWER`, `TRIM`, `LEFT`, `RIGHT`, `LEN`,
-//! `ISNULL`, `COALESCE`, `TO_NUMBER`, `TODAY`, `NOW`, `RECORD_NUMBER`, `PAGE_NUMBER`, `TOTAL_PAGES`,
+//! `ISNULL`, `COALESCE`, `TO_NUMBER`, `TODAY`, `NOW`, `RECORD_NUMBER`, `PAGE_NUMBER`, `TOTAL_PAGES`, `USER_NAME`,
 //! `JOIN(lista, separador)` e `CONTAINS(lista, valor)` para parâmetros de vários valores.
 
 pub mod format;
@@ -130,8 +131,17 @@ impl FormulaEngine {
         let mut report = Map::new();
         report.insert("Title".into(), report_title.to_string().into());
         report.insert("RecordCount".into(), Dynamic::from(0_i64));
+        report.insert("ExecutionTime".into(), chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string().into());
+        for key in ["Author", "Description", "FileName", "FilePath"] {
+            report.insert(key.into(), String::new().into());
+        }
 
         Self { engine, cache: HashMap::new(), state, fields: Map::new(), group: Map::new(), params, param_labels, report }
+    }
+
+    /// Metadados do relatório expostos em `Report.<chave>` (ex.: `Author`, `FileName`).
+    pub fn set_report_info(&mut self, key: &str, value: impl Into<String>) {
+        self.report.insert(key.into(), value.into().into());
     }
 
     /// Rótulos resolvidos a partir de `availableValues`; substituem o texto do valor.
@@ -435,6 +445,7 @@ fn register_builtins(engine: &mut Engine, state: &Rc<RefCell<EvalState>>) {
     });
     engine.register_fn("TODAY", || chrono::Local::now().format("%Y-%m-%d").to_string());
     engine.register_fn("NOW", || chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+    engine.register_fn("USER_NAME", || std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default());
 }
 
 #[cfg(test)]

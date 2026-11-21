@@ -213,10 +213,25 @@ function SchemaTree({ alias, profile }: { alias: string; profile: ConnectionProf
       if (detail && !detail.dataSource) detail.dataSource = name;
     });
     useUi.getState().set({
-      leftTab: 'data',
       fields: { ...useUi.getState().fields, [t.name]: t.columns.map((c) => ({ name: c.name, dataType: c.arrowType })) },
     });
     notify(`Query "${t.name}" adicionada ao relatório`, 'success');
+  };
+
+  const addProcedure = (schema: string, name: string) => {
+    update((d) => {
+      let ds = d.dataSources.find((x) => x.connectionRef === alias);
+      if (!ds) {
+        ds = { id: `ds_${alias}`.toLowerCase(), provider: profile.provider, connectionRef: alias, queries: [] };
+        d.dataSources.push(ds);
+      }
+      const names = new Set(d.dataSources.flatMap((x) => x.queries.map((q) => q.name)));
+      let qname = name.replace(/\W/g, '_');
+      for (let n = 2; names.has(qname); n++) qname = `${name.replace(/\W/g, '_')}_${n}`;
+      const procedure = schema && !['main', 'public'].includes(schema) ? `${schema}.${name}` : name;
+      ds.queries.push({ name: qname, sql: '', kind: 'storedProcedure', procedure });
+    });
+    notify(`Procedure "${name}" adicionada — defina os parâmetros em Propriedades do Conjunto de Dados`, 'success');
   };
 
   const node = (key: string, label: React.ReactNode, children?: React.ReactNode, extra?: React.ReactNode) => (
@@ -263,7 +278,11 @@ function SchemaTree({ alias, profile }: { alias: string; profile: ConnectionProf
             {s.views.length > 0 && node(`${s.name}:views`, <span className="tree-text">Views ({s.views.length})</span>, s.views.map(tableNode))}
             {s.procedures.length > 0 &&
               node(`${s.name}:procs`, <span className="tree-text">Procedures ({s.procedures.length})</span>,
-                s.procedures.map((p) => node(`${s.name}:p:${p.name}`, <span className="tree-text">ƒ {p.name}</span>)))}
+                s.procedures.map((p) =>
+                  node(`${s.name}:p:${p.name}`, <span className="tree-text">ƒ {p.name}</span>, undefined,
+                    <span className="tree-actions">
+                      <button className="link" title="Adicionar como conjunto de dados (stored procedure)" onClick={() => addProcedure(p.schema, p.name)}>+ conjunto</button>
+                    </span>)))}
           </>,
         ),
       )}
@@ -273,5 +292,14 @@ function SchemaTree({ alias, profile }: { alias: string; profile: ConnectionProf
         </Modal>
       )}
     </div>
+  );
+}
+
+/** Gerenciador de conexões (aberto pela Ribbon ou pelo menu da Fonte de Dados). */
+export function ConnectionsDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="Conexões" wide onClose={onClose} footer={<><span className="spacer" /><button onClick={onClose}>Fechar</button></>}>
+      <ConnectionsPanel />
+    </Modal>
   );
 }

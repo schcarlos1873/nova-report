@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use nova_domain::ParamValue;
 use nova_domain::connection::{ConnectionConfig, ConnectionProfile, DatabaseTree};
-use nova_domain::report::{ParameterDef, ReportDefinition};
+use nova_domain::report::{DataSourceDef, ParameterDef, QueryDef, ReportDefinition};
 use nova_engine::data::CellValue;
 use serde::Serialize;
 
@@ -120,7 +120,7 @@ impl ConnectionService {
     ) -> AppResult<QueryPreview> {
         let cfg = self.resolver.by_alias(alias)?;
         let params = raw_params.iter().map(|(k, v)| (k.clone(), json_param(v))).collect();
-        run_preview(self.gateway.as_ref(), cfg, sql, params, limit).await
+        run_preview(self.gateway.as_ref(), cfg, sql, true, params, limit).await
     }
 
     /// Executa uma query declarada no relatório (usada para descobrir campos no designer).
@@ -136,7 +136,7 @@ impl ConnectionService {
         let cfg = self.resolver.for_data_source(ds, base_dir)?;
         // no designer, parâmetros obrigatórios podem estar vazios: os preenchidos continuam valendo
         let params = params::resolve_lenient(def, raw_params);
-        run_preview(self.gateway.as_ref(), cfg, &q.sql, params, limit).await
+        run_preview(self.gateway.as_ref(), cfg, &query_sql(ds, q)?, !q.is_procedure(), params, limit).await
     }
 
     /// Lista de valores de um parâmetro com `availableValues` (filtros em cascata).
@@ -183,7 +183,7 @@ pub(crate) async fn fetch_options(
     let av = p.available_values.as_ref().ok_or_else(|| AppError::Invalid(format!("parâmetro '{}' não tem lista de valores", p.name)))?;
     let (ds, q) = def.find_query(&av.query).ok_or_else(|| AppError::Invalid(format!("query '{}' não existe", av.query)))?;
     let cfg = resolver.for_data_source(ds, base_dir)?;
-    let preview = run_preview(gateway, cfg, &q.sql, params, limit + 1).await?;
+    let preview = run_preview(gateway, cfg, &query_sql(ds, q)?, !q.is_procedure(), params, limit + 1).await?;
     let col = |field: &str| {
         preview.columns.iter().position(|c| c.name.eq_ignore_ascii_case(field)).ok_or_else(|| {
             let found: Vec<&str> = preview.columns.iter().map(|c| c.name.as_str()).collect();
@@ -211,9 +211,17 @@ pub(crate) async fn fetch_options(
     Ok((values, truncated))
 }
 
-async fn run_preview(gateway: &dyn ConnectorGateway, cfg: ConnectionConfig, sql: &str, params: HashMap<String, ParamValue>, limit: usize) -> AppResult<QueryPreview> {
+/// SQL enviada ao banco para a query (texto ou chamada da stored procedure no dialeto da fonte).
+pub(crate) fn query_sql(ds: &DataSourceDef, q: &QueryDef) -> AppResult<String> {
+    q.effective_sql(ds.provider)
+        .ok_or_else(|| AppError::Invalid(format!("o provider {} não suporta stored procedures (query '{}')", ds.provider.id(), q.name)))
+}
+
+/// `paginate = false` para procedures: `EXEC`/`CALL` não podem ser envolvidos num subselect; o
+/// resultado é cortado em `limit` depois da execução.
+async fn run_preview(gateway: &dyn ConnectorGateway, cfg: ConnectionConfig, sql: &str, paginate: bool, params: HashMap<String, ParamValue>, limit: usize) -> AppResult<QueryPreview> {
     let kind = cfg.profile.provider;
-    let sql = if kind.is_sql() { gateway.paginate(kind, sql, limit) } else { sql.to_string() };
+    let sql = if kind.is_sql() && paginate { gateway.paginate(kind, sql, limit) } else { sql.to_string() };
     let provider = gateway.provider(cfg)?;
     let start = Instant::now();
     let df = provider.execute_query(&sql, &params).await?;

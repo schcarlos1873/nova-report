@@ -56,4 +56,17 @@ impl ConnectorGateway for ConnectorRegistry {
     fn select_all(&self, kind: ProviderKind, schema: Option<&str>, table: &str) -> String {
         dialect::for_provider(kind).select_all(schema, table)
     }
+
+    #[cfg(feature = "rest")]
+    async fn fetch_url(&self, url: &str) -> AppResult<(Vec<u8>, Option<String>)> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .user_agent("NovaReport/0.1")
+            .build()
+            .map_err(|e| AppError::Connector(e.to_string()))?;
+        let res = client.get(url).send().await.and_then(|r| r.error_for_status()).map_err(|e| AppError::Connector(format!("{url}: {e}")))?;
+        let mime = res.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(|s| s.split(';').next().unwrap_or(s).trim().to_string());
+        let bytes = res.bytes().await.map_err(|e| AppError::Connector(format!("{url}: {e}")))?;
+        Ok((bytes.to_vec(), mime))
+    }
 }

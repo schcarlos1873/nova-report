@@ -25,7 +25,8 @@ impl DocumentService {
     }
 
     pub fn open(&self, path: &Path) -> AppResult<(ReportDefinition, Vec<ValidationIssue>)> {
-        let def = self.repository.load(path)?;
+        let mut def = self.repository.load(path)?;
+        def.source_path = Some(path.to_path_buf());
         let issues = self.validate(&def);
         Ok((def, issues))
     }

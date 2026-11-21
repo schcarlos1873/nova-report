@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export function Section({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
   return (
@@ -158,13 +158,23 @@ export function Modal({
   footer?: ReactNode;
   wide?: boolean;
 }) {
+  // Esc fecha só o modal do topo: diálogos abertos por outros diálogos vêm depois no DOM
+  const backdrop = useRef<HTMLDivElement>(null);
+  // listener estável: re-registrar a cada render (onClose inline) durante o despacho do Esc faria o
+  // navegador pular este handler quando outro listener provoca um render síncrono
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
-    const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const all = document.querySelectorAll('.modal-backdrop');
+      if (all[all.length - 1] === backdrop.current) close.current();
+    };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
+  }, []);
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div ref={backdrop} className="modal-backdrop" onMouseDown={onClose}>
       <div className={`modal ${wide ? 'wide' : ''}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="modal-title">
           <span>{title}</span>

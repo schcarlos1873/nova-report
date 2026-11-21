@@ -3,6 +3,44 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 
+/// Tipo MIME de uma imagem pelos primeiros bytes.
+pub fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    let head = &bytes[..bytes.len().min(256)];
+    if head.starts_with(b"\x89PNG") {
+        Some("image/png")
+    } else if head.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if head.starts_with(b"GIF8") {
+        Some("image/gif")
+    } else if head.starts_with(b"RIFF") && head.get(8..12) == Some(b"WEBP") {
+        Some("image/webp")
+    } else {
+        let text = String::from_utf8_lossy(head);
+        let t = text.trim_start();
+        (t.starts_with("<svg") || (t.starts_with("<?xml") && text.contains("<svg"))).then_some("image/svg+xml")
+    }
+}
+
+/// Valor de um campo do banco como origem de imagem: `data:` URI e caminhos passam direto;
+/// base64 puro vira `data:` URI com o tipo detectado.
+pub fn field_image_source(value: &str) -> Result<String, String> {
+    let v = value.trim();
+    if v.is_empty() {
+        return Err("campo de imagem vazio".into());
+    }
+    if v.starts_with("data:") {
+        return Ok(v.to_string());
+    }
+    let looks_b64 = v.len() >= 64 && v.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'+' | b'/' | b'=' | b'\n' | b'\r'));
+    if looks_b64 {
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(v.replace(['\n', '\r'], "")) {
+            let mime = sniff_image_mime(&bytes).unwrap_or("image/png");
+            return Ok(format!("data:{mime};base64,{}", v.replace(['\n', '\r'], "")));
+        }
+    }
+    Ok(v.to_string())
+}
+
 /// Resolve imagens (`data:` URI, caminho relativo ao `.nrep` ou absoluto) para bytes
 /// expostos ao Typst por caminho virtual.
 #[derive(Default)]

@@ -1,11 +1,18 @@
-// Arrastar e soltar do toolbox / painel de dados para o canvas.
+// Arrastar e soltar da árvore "Dados do Relatório" para o canvas.
 // O payload também fica em memória durante o arraste: `dragover` não pode ler `dataTransfer`
 // (necessário para o destaque do destino) e alguns WebViews descartam tipos MIME customizados.
-import type { Band, ElementType, ReportDefinition, ReportElement, TableColumn } from '../../domain/types';
+import { IMAGE_REF_PREFIX, type Band, type ElementType, type ReportDefinition, type ReportElement, type TableColumn } from '../../domain/types';
 import { createElement } from '../../domain/factory';
 
 export interface DropPayload {
   elementType?: ElementType;
+  /** Expressão pronta (campos internos, parâmetros): vira um elemento expressão. */
+  expression?: string;
+  format?: string;
+  /** Nome de um recurso de `images`: vira um elemento imagem `image:<nome>`. */
+  imageRef?: string;
+  /** Rótulo para o destaque durante o arraste. */
+  label?: string;
   field?: string;
   /** Query de origem do campo e seu tipo (dtype do Polars). */
   query?: string;
@@ -19,7 +26,7 @@ let current: DropPayload | undefined;
 export function beginDrag(e: React.DragEvent, payload: DropPayload) {
   current = payload;
   e.dataTransfer.setData(DND_MIME, JSON.stringify(payload));
-  e.dataTransfer.setData('text/plain', payload.field ? `Fields.${payload.field}` : payload.elementType ?? '');
+  e.dataTransfer.setData('text/plain', payload.field ? `Fields.${payload.field}` : payload.expression ?? payload.elementType ?? '');
   e.dataTransfer.effectAllowed = 'copy';
 }
 
@@ -167,4 +174,25 @@ export function resolveFieldDrop(
     default:
       return { inserts: [{ bandId: band.id, element: valueEl() }], hint: `Valor {${field}}` };
   }
+}
+
+/** Elemento criado ao soltar um payload que não é campo de query (expressão pronta, imagem ou ferramenta). */
+export function elementForPayload(report: ReportDefinition, p: DropPayload, x: number, y: number, widthMm: number): ReportElement | undefined {
+  if (p.expression) {
+    const width = 40;
+    return createElement(report, 'expression', Math.max(0, Math.min(x, widthMm - width)), y, {
+      width,
+      expression: p.expression,
+      format: p.format,
+    } as Partial<ReportElement>);
+  }
+  if (p.imageRef) {
+    const width = 30;
+    return createElement(report, 'image', Math.max(0, Math.min(x, widthMm - width)), y, {
+      width,
+      height: 15,
+      source: `${IMAGE_REF_PREFIX}${p.imageRef}`,
+    } as Partial<ReportElement>);
+  }
+  return p.elementType ? createElement(report, p.elementType, x, y) : undefined;
 }

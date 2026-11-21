@@ -104,8 +104,8 @@ fn group_bands_are_ordered_outer_to_inner() {
 /// Fábrica → Máquina (vários valores) → relatório, com queries de lista.
 fn cascade_report() -> ReportDefinition {
     let mut def = ReportDefinition::from_json(SPEC_EXAMPLE).unwrap();
-    def.data_sources[0].queries.push(QueryDef { name: "LkFabricas".into(), sql: "SELECT Id, Code FROM fab".into() });
-    def.data_sources[0].queries.push(QueryDef { name: "LkMaquinas".into(), sql: "SELECT Id, Code FROM maq WHERE FactoryId IN (:fabrica)".into() });
+    def.data_sources[0].queries.push(QueryDef::text("LkFabricas", "SELECT Id, Code FROM fab"));
+    def.data_sources[0].queries.push(QueryDef::text("LkMaquinas", "SELECT Id, Code FROM maq WHERE FactoryId IN (:fabrica)"));
     def.parameters.push(
         serde_json::from_value(serde_json::json!({
             "name": "fabrica", "type": "int", "multiValue": true,
@@ -164,4 +164,64 @@ fn detects_dependency_problems() {
     let mut def = cascade_report();
     def.parameters[2].available_values.as_mut().unwrap().query = "Nada".into();
     assert!(def.validate().iter().any(|i| i.message.contains("'Nada' não existe")));
+}
+
+fn procedure(params: Vec<ProcedureParam>) -> QueryDef {
+    QueryDef { kind: QueryKind::StoredProcedure, procedure: Some("get_new_orders".into()), procedure_params: params, ..QueryDef::text("Pedidos", "") }
+}
+
+fn pp(name: &str, value: &str, pass_null: bool) -> ProcedureParam {
+    ProcedureParam { name: name.into(), value: value.into(), pass_null }
+}
+
+#[test]
+fn stored_procedure_sql_per_dialect() {
+    let q = procedure(vec![pp("@param1", ":param1", false), pp("@param2", ":param2", false), pp("@param3", ":param3", true)]);
+    assert_eq!(q.effective_sql(ProviderKind::Mssql).unwrap(), "EXEC get_new_orders @param1 = :param1, @param2 = :param2, @param3 = NULL");
+    assert_eq!(q.effective_sql(ProviderKind::Postgres).unwrap(), "SELECT * FROM get_new_orders(param1 => :param1, param2 => :param2, param3 => NULL)");
+    assert_eq!(q.effective_sql(ProviderKind::Mysql).unwrap(), "CALL get_new_orders(:param1, :param2, NULL)");
+    assert_eq!(q.effective_sql(ProviderKind::Sqlite), None);
+    assert_eq!(procedure(vec![]).effective_sql(ProviderKind::Mssql).unwrap(), "EXEC get_new_orders");
+    // `:param3` com NULL não conta como uso do parâmetro
+    assert_eq!(crate::report::sql::named_parameters(&q.parameter_text()), vec!["param1".to_string(), "param2".to_string()]);
+}
+
+#[test]
+fn stored_procedure_validation_and_roundtrip() {
+    let mut def = ReportDefinition::from_json(SPEC_EXAMPLE).unwrap();
+    def.data_sources[0].queries[0] = QueryDef { name: "Pedidos".into(), ..procedure(vec![pp("@inicio", ":data_inicio", false), pp("@x", ":nao_declarado", false)]) };
+    let issues = def.validate();
+    assert!(issues.iter().any(|i| i.message.contains(":nao_declarado")), "{issues:?}");
+    assert!(!issues.iter().any(|i| i.message.contains("query vazia")));
+
+    let json = def.to_canonical_json().unwrap();
+    assert!(json.contains("\"kind\": \"storedProcedure\""));
+    assert_eq!(ReportDefinition::from_json(&json).unwrap(), def);
+    // queries de texto não serializam os campos novos
+    let plain = ReportDefinition::from_json(SPEC_EXAMPLE).unwrap().to_canonical_json().unwrap();
+    assert!(!plain.contains("kind") && !plain.contains("procedure"));
+
+    def.data_sources[0].provider = ProviderKind::Sqlite;
+    assert!(def.validate().iter().any(|i| i.message.contains("não suporta stored procedures")));
+}
+
+#[test]
+fn image_resources_are_validated() {
+    let mut def = ReportDefinition::from_json(SPEC_EXAMPLE).unwrap();
+    let img = |name: &str, kind, value: &str| ImageResource { name: name.into(), kind, value: value.into(), mime_type: None, query: None, field: None };
+    def.images = vec![
+        img("logo", ImageKind::File, "logo.svg"),
+        img("logo", ImageKind::Url, "ftp://x"),
+        ImageResource { query: Some("Nada".into()), field: Some("foto".into()), ..img("foto", ImageKind::Database, "") },
+    ];
+    let mut el = def.bands[1].elements[0].clone();
+    el.id = "img_1".into();
+    el.kind = ElementKind::Image { source: "image:inexistente".into(), fit: ImageFit::Contain };
+    def.bands[1].elements.push(el);
+    let msgs: Vec<String> = def.validate().into_iter().map(|i| i.message).collect();
+    assert!(msgs.iter().any(|m| m.contains("nome de imagem duplicado")), "{msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("http://")));
+    assert!(msgs.iter().any(|m| m.contains("query 'Nada'")));
+    assert!(msgs.iter().any(|m| m.contains("'inexistente'")));
+    assert_eq!(def.images[0].format_hint().as_deref(), Some("svg"));
 }

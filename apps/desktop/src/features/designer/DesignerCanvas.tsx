@@ -3,12 +3,11 @@ import { Group, Layer, Line, Rect, Shape, Stage, Text, Transformer } from 'react
 import type Konva from 'konva';
 import type { Band, ReportElement } from '../../domain/types';
 import { BAND_COLORS, BAND_LABELS, bandTitle, clamp, printableWidth, pxPerMm, pxToMm, round, sortBands } from '../../domain/geometry';
-import { createElement } from '../../domain/factory';
 import { draftElement, moveElementToBand, useReport } from '../../state/reportStore';
 import { useUi } from '../../state/uiStore';
 import { ElementNode } from './ElementNode';
 import { snapRect, type Guide } from './guides';
-import { draggedPayload, endDrag, resolveFieldDrop, tableAt } from './dnd';
+import { draggedPayload, elementForPayload, endDrag, resolveFieldDrop, tableAt } from './dnd';
 
 const RULER = 22;
 const STRIP = 20;
@@ -219,7 +218,7 @@ export function DesignerCanvas() {
       const t = r.tableColumn && tableAt(pt.l.band, pt.rawX, pt.rawY);
       target = { bandIdx: pt.bi, hint: r.hint, table: t ? { x: t.x, y: t.y, w: t.width, h: t.height } : undefined };
     } else {
-      target = { bandIdx: pt.bi, hint: `Inserir em ${BAND_LABELS[pt.l.band.type]}` };
+      target = { bandIdx: pt.bi, hint: `${payload.label ? `${payload.label} → ` : 'Inserir em '}${BAND_LABELS[pt.l.band.type]}` };
     }
     if (target.bandIdx !== dropTarget?.bandIdx || target.hint !== dropTarget.hint) setDropTarget(target);
   };
@@ -258,8 +257,9 @@ export function DesignerCanvas() {
       // só o elemento solto: o rótulo/valor complementar fica em outra banda
       else if (res.inserts[0]) select([res.inserts[0].element.id], band.id);
       if (res.bindDetail) useUi.getState().notify(`Detalhe associado à query ${res.bindDetail.query}`);
-    } else if (payload.elementType) {
-      const el: ReportElement = createElement(r, payload.elementType, pt.x, pt.y);
+    } else {
+      const el = elementForPayload(r, payload, pt.x, pt.y, widthMm);
+      if (!el) return;
       update((d) => void d.bands.find((b) => b.id === band.id)?.elements.push(el));
       select([el.id], band.id);
     }

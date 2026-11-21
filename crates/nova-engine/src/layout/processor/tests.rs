@@ -130,3 +130,44 @@ fn perf_50_pages_warm_preview() {
     }
     assert!(pages >= 40, "{pages}");
 }
+
+#[test]
+fn image_refs_and_report_info() {
+    const PNG_1PX: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    let mut def = report();
+    let img = |name: &str, kind, value: String, field: Option<&str>| ImageResource {
+        name: name.into(), kind, value, mime_type: None, query: field.map(|_| "Pedidos".into()), field: field.map(Into::into),
+    };
+    def.images = vec![
+        img("logo", ImageKind::Embedded, format!("data:image/png;base64,{PNG_1PX}"), None),
+        img("foto", ImageKind::Database, String::new(), Some("foto")),
+    ];
+    def.meta.author = Some("Equipe".into());
+    def.source_path = Some("/tmp/vendas.nrep".into());
+    let header = def.bands.iter_mut().find(|b| b.band_type == BandType::PageHeader).unwrap();
+    let mut el = header.elements[0].clone();
+    for (id, kind) in [
+        ("logo", ElementKind::Image { source: "image:logo".into(), fit: ImageFit::Contain }),
+        ("foto", ElementKind::Image { source: "image:foto".into(), fit: ImageFit::Contain }),
+        ("info", ElementKind::Expression { expression: "Report.FileName + '|' + Report.Author".into(), format: None }),
+    ] {
+        el.id = id.into();
+        el.kind = kind;
+        header.elements.push(el.clone());
+    }
+    assert!(def.ensure_valid().is_ok(), "{:?}", def.validate());
+
+    let mut b = DataFrameBuilder::new(vec![("cliente".into(), ColumnKind::Text), ("valor".into(), ColumnKind::Float), ("foto".into(), ColumnKind::Text)]);
+    b.push_row(vec![CellValue::Text("Ana".into()), CellValue::Float(1.0), CellValue::Text(PNG_1PX.into())]);
+    let mut datasets = HashMap::new();
+    datasets.insert("Pedidos".to_string(), b.finish().unwrap());
+    let ctx = DataContext { datasets, ..Default::default() };
+
+    let out = ReportProcessor::new(&def, &ctx, None).process().unwrap();
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    let header = out.page_header.as_ref().unwrap();
+    let images = header.elements.iter().filter(|e| matches!(e, RenderedElement::Image { .. })).count();
+    assert_eq!(images, 2);
+    assert!(texts(header).contains(&"vendas.nrep|Equipe".to_string()));
+    assert_eq!(out.assets.len(), 1, "logo e foto geram a mesma data URI e compartilham o recurso: {:?}", out.assets.keys());
+}

@@ -2,21 +2,63 @@ import { useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api } from './infra/api';
 import { useReport } from './state/reportStore';
-import { useUi, type LeftTab } from './state/uiStore';
+import { LEFT_MAX, LEFT_MIN, persistLeftWidth, useUi } from './state/uiStore';
 import * as cmd from './state/commands';
 import { Ribbon } from './features/ribbon/Ribbon';
 import { DesignerCanvas } from './features/designer/DesignerCanvas';
-import { Toolbox } from './features/toolbox/Toolbox';
 import { PropertiesPanel } from './features/properties/PropertiesPanel';
-import { DataPanel } from './features/data/DataPanel';
-import { ConnectionsPanel } from './features/connections/ConnectionsPanel';
+import { DataDialogs, ReportDataPanel } from './features/reportData/ReportDataPanel';
 import { PreviewPane } from './features/preview/PreviewPane';
 
-const TABS: { id: LeftTab; label: string }[] = [
-  { id: 'toolbox', label: 'Elementos' },
-  { id: 'data', label: 'Dados' },
-  { id: 'connections', label: 'Conexões' },
-];
+/** Arrastar a borda direita da barra "Dados do Relatório" ajusta a largura (duplo clique restaura). */
+function Splitter() {
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startW = useUi.getState().leftWidth;
+    const move = (ev: PointerEvent) => {
+      useUi.getState().set({ leftWidth: Math.min(LEFT_MAX, Math.max(LEFT_MIN, startW + ev.clientX - startX)) });
+    };
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      persistLeftWidth(useUi.getState().leftWidth);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+  };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 40 : 10;
+    const d = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+    if (!d) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const w = Math.min(LEFT_MAX, Math.max(LEFT_MIN, useUi.getState().leftWidth + d));
+    useUi.getState().set({ leftWidth: w });
+    persistLeftWidth(w);
+  };
+  const w = useUi((s) => s.leftWidth);
+  return (
+    <div
+      className="splitter"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Redimensionar Dados do Relatório"
+      aria-valuemin={LEFT_MIN}
+      aria-valuemax={LEFT_MAX}
+      aria-valuenow={w}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      onDoubleClick={() => {
+        useUi.getState().set({ leftWidth: 280 });
+        persistLeftWidth(280);
+      }}
+    />
+  );
+}
 
 export default function App() {
   const { report, filePath, dirty } = useReport();
@@ -99,7 +141,7 @@ export default function App() {
   const errors = issues.filter((i) => i.severity === 'error').length;
   const warnings = issues.length - errors;
 
-  const columns = [ui.showLeft ? '280px' : null, '1fr', ui.showRight ? '300px' : null].filter(Boolean).join(' ');
+  const columns = [ui.showLeft ? `${ui.leftWidth}px` : null, '1fr', ui.showRight ? '300px' : null].filter(Boolean).join(' ');
 
   return (
     <div className="app">
@@ -109,17 +151,9 @@ export default function App() {
         {ui.mode === 'design' ? (
           <>
             {ui.showLeft && (
-              <aside className="left">
-                <nav className="tabs">
-                  {TABS.map((t) => (
-                    <button key={t.id} className={ui.leftTab === t.id ? 'active' : ''} onClick={() => ui.set({ leftTab: t.id })}>{t.label}</button>
-                  ))}
-                </nav>
-                <div className="panel-scroll">
-                  {ui.leftTab === 'toolbox' && <Toolbox />}
-                  {ui.leftTab === 'data' && <DataPanel />}
-                  {ui.leftTab === 'connections' && <ConnectionsPanel />}
-                </div>
+              <aside className="left" aria-label="Dados do Relatório">
+                <ReportDataPanel />
+                <Splitter />
               </aside>
             )}
             <section className="center">
@@ -169,6 +203,7 @@ export default function App() {
         </div>
       )}
 
+      <DataDialogs />
       {ui.toast && <div className={`toast ${ui.toast.kind}`}>{ui.toast.text}</div>}
     </div>
   );

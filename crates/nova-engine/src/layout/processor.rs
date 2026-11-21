@@ -1,12 +1,12 @@
 use std::path::Path;
 
 use nova_domain::report::{
-    Align, Band, BandType, ElementKind, ImageFit, LineDirection, ReportDefinition, ReportElement,
-    TableSpec, VerticalAlign,
+    Align, Band, BandType, ElementKind, ImageFit, ImageKind, LineDirection, ReportDefinition, ReportElement,
+    TableSpec, VerticalAlign, image_ref,
 };
 use polars::prelude::DataFrame;
 
-use super::assets::AssetResolver;
+use super::assets::{AssetResolver, field_image_source};
 use crate::data::DataContext;
 use crate::expression::{FormulaEngine, PAGE_NUMBER_MARK, TOTAL_PAGES_MARK};
 use crate::render::{PageConfig, RenderedBand, RenderedElement, RenderedReport, TableCell};
@@ -34,6 +34,12 @@ impl<'a> ReportProcessor<'a> {
     pub fn new(def: &'a ReportDefinition, data: &'a DataContext, base_dir: Option<&Path>) -> Self {
         let mut engine = FormulaEngine::new(&data.parameters, &def.meta.title);
         engine.set_param_labels(&data.param_labels);
+        engine.set_report_info("Author", def.meta.author.clone().unwrap_or_default());
+        engine.set_report_info("Description", def.meta.description.clone().unwrap_or_default());
+        if let Some(p) = &def.source_path {
+            engine.set_report_info("FileName", p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+            engine.set_report_info("FilePath", p.to_string_lossy());
+        }
         let main = def.main_query_name().and_then(|q| data.datasets.get(&q).cloned());
         Self { def, data, engine, assets: AssetResolver::new(base_dir), warnings: vec![], main }
     }
@@ -198,6 +204,22 @@ impl<'a> ReportProcessor<'a> {
         })
     }
 
+    /// Origem concreta de uma imagem: `image:<nome>` é resolvido em `images` (o tipo `database` lê o
+    /// campo no registro corrente); os demais valores passam direto.
+    fn image_source(&mut self, source: &str) -> Result<String, String> {
+        let Some(name) = image_ref(source) else { return Ok(source.to_string()) };
+        let img = self.def.find_image(name).ok_or_else(|| format!("imagem '{name}' não existe"))?;
+        match img.kind {
+            ImageKind::File | ImageKind::Embedded => Ok(img.value.clone()),
+            ImageKind::Url => Err(format!("a imagem '{name}' (URL) não foi baixada antes da geração")),
+            ImageKind::Database => {
+                let field = img.field.as_deref().unwrap_or("").replace('"', "");
+                let value = self.engine.eval_string(&format!("Fields[\"{field}\"]")).map_err(|e| e.to_string())?;
+                field_image_source(&value)
+            }
+        }
+    }
+
     fn warn(&mut self, id: &str, e: impl std::fmt::Display) {
         let msg = format!("{id}: {e}");
         if !self.warnings.contains(&msg) && self.warnings.len() < 200 {
@@ -264,7 +286,7 @@ impl<'a> ReportProcessor<'a> {
                     el.y + h,
                 ))
             }
-            ElementKind::Image { source, fit } => match self.assets.resolve(source) {
+            ElementKind::Image { source, fit } => match self.image_source(source).and_then(|s| self.assets.resolve(&s)) {
                 Ok(vpath) => Some((
                     RenderedElement::Image {
                         x_mm: el.x,

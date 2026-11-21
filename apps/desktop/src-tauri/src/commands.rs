@@ -20,6 +20,12 @@ fn base_dir(report_path: &Option<String>) -> Option<PathBuf> {
     report_path.as_ref().and_then(|p| Path::new(p).parent().map(Path::to_path_buf))
 }
 
+/// `Report.FileName`/`Report.FilePath` nas expressões.
+fn with_source(mut report: ReportDefinition, report_path: &Option<String>) -> ReportDefinition {
+    report.source_path = report_path.as_ref().map(PathBuf::from);
+    report
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
@@ -75,6 +81,7 @@ pub async fn render_report_preview(
     report_path: Option<String>,
     refresh: Option<bool>,
 ) -> CmdResult<PreviewResult> {
+    let report = with_source(report, &report_path);
     state.render.preview(&report, &params, base_dir(&report_path), refresh.unwrap_or(false)).await
 }
 
@@ -87,6 +94,7 @@ pub async fn export_report(
     format: ExportFormat,
     output_path: String,
 ) -> CmdResult<usize> {
+    let report = with_source(report, &report_path);
     let bytes = state.render.export(&report, &params, base_dir(&report_path), format).await?;
     tokio::fs::write(&output_path, &bytes).await.map_err(|e| AppError::Invalid(format!("{output_path}: {e}")))?;
     Ok(bytes.len())
@@ -165,4 +173,17 @@ pub async fn parameter_values(
         .connections
         .parameter_values(&report, &name, &params.unwrap_or_default(), base_dir(&report_path).as_deref(), limit.unwrap_or(1000))
         .await
+}
+
+/// Lê uma imagem local como `data:` URI (imagens embutidas no `.nrep`).
+#[tauri::command]
+pub async fn read_file_data_uri(path: String) -> CmdResult<String> {
+    use base64::Engine as _;
+    const MAX_BYTES: usize = 5 * 1024 * 1024;
+    let bytes = tokio::fs::read(&path).await.map_err(|e| AppError::Invalid(format!("{path}: {e}")))?;
+    if bytes.len() > MAX_BYTES {
+        return Err(AppError::Invalid(format!("{path}: imagem maior que 5 MB; use o tipo Local")));
+    }
+    let mime = nova_engine::layout::sniff_image_mime(&bytes).ok_or_else(|| AppError::Invalid(format!("{path}: formato de imagem não reconhecido")))?;
+    Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(&bytes)))
 }

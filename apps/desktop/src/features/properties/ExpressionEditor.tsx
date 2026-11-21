@@ -62,7 +62,7 @@ export function ExpressionEditor({ initial, onSave, onClose }: { initial: string
         <div className="expr-lists">
           <div>
             <h4>Campos</h4>
-            {allFields.length === 0 && <p className="muted small">Execute uma query no painel Dados para descobrir os campos.</p>}
+            {allFields.length === 0 && <p className="muted small">Carregue os campos de um conjunto de dados em Dados do Relatório.</p>}
             {allFields.map((f) => <button key={f} className="chip" onClick={() => insert(`Fields.${f}`)}>{f}</button>)}
           </div>
           <div>

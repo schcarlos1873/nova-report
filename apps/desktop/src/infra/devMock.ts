@@ -7,6 +7,17 @@ import { blankReport } from '../domain/factory';
 import type { ReportDefinition } from '../domain/types';
 
 export const demoReport = JSON.parse(demo) as ReportDefinition;
+// recursos que o exemplo em disco não tem: imagens e um conjunto de dados por stored procedure
+demoReport.images = [
+  { name: 'logo', kind: 'file', value: 'logo.svg' },
+  { name: 'pslogo', kind: 'embedded', mimeType: 'image/svg+xml', value: `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" rx="6" fill="#2563eb"/><text x="40" y="26" font-size="16" fill="#fff" text-anchor="middle" font-family="sans-serif">PS</text></svg>')}` },
+];
+demoReport.dataSources.push({
+  id: 'ds_faturamento',
+  provider: 'mssql',
+  connectionStringRef: 'ENV_ERP',
+  queries: [{ name: 'NovosPedidos', sql: '', kind: 'storedProcedure', procedure: 'dbo.get_new_orders', procedureParams: [{ name: '@inicio', value: ':data_inicio' }, { name: '@status', value: '', passNull: true }] }],
+});
 export const cascadeReport = JSON.parse(cascata) as ReportDefinition;
 
 // dados mínimos do vendas.db para simular a cascata Região → Cliente
@@ -50,6 +61,8 @@ export function installDevMock() {
         return [];
       case 'check_expression':
         return null;
+      case 'read_file_data_uri':
+        return `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18" fill="#16a34a"/></svg>')}`;
       case 'preview_report_query':
         return { columns: FIELDS.map((name) => ({ name, dataType: 'str' })), rows: [], elapsedMs: 1 };
       case 'fetch_schema_tree':

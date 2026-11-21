@@ -4,5 +4,5 @@
 mod assets;
 mod processor;
 
-pub use assets::AssetResolver;
+pub use assets::{AssetResolver, field_image_source, sniff_image_mime};
 pub use processor::ReportProcessor;

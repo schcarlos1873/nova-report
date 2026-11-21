@@ -1,13 +1,13 @@
 // Comandos do editor: fonte única de comportamento para Ribbon, atalhos de teclado e painéis.
 // Cada comando que altera o documento gera exatamente um passo de desfazer.
 import type { Draft } from 'immer';
-import type { BandType, ElementType, ReportDefinition, ReportElement, Style } from '../domain/types';
+import { IMAGE_REF_PREFIX, type BandType, type DataSourceDef, type ElementType, type GroupDef, type ImageResource, type ParameterDef, type QueryDef, type ReportDefinition, type ReportElement, type Style } from '../domain/types';
 import { cloneElements, createBand, createElement, uniqueId } from '../domain/factory';
 import { printableWidth, sortBands } from '../domain/geometry';
 import { api } from '../infra/api';
 import { dialogs } from '../infra/dialogs';
 import { draftElement, findElement, useReport } from './reportStore';
-import { useUi, ZOOM_MAX, ZOOM_MIN } from './uiStore';
+import { useUi, ZOOM_MAX, ZOOM_MIN, type DataDialog } from './uiStore';
 
 // ---- seleção
 
@@ -198,19 +198,8 @@ export function addBand(type: BandType) {
   useUi.getState().select([], band.id);
 }
 
-export function addGroup() {
-  useReport.getState().update((d) => {
-    d.groups ??= [];
-    let n = d.groups.length + 1;
-    while (d.groups.some((g) => g.name === `grupo${n}`)) n++;
-    const name = `grupo${n}`;
-    d.groups.push({ name, expression: 'Fields.campo' });
-    const header = createBand(d as ReportDefinition, 'groupHeader', name);
-    d.bands.push(header);
-    d.bands.push(createBand(d as ReportDefinition, 'groupFooter', name));
-  });
-  useUi.getState().set({ leftTab: 'data', showLeft: true });
-}
+/** Abre o diálogo de novo grupo (o grupo e suas bandas são criados no Ok). */
+export const addGroup = () => openDataDialog({ kind: 'group' });
 
 export const ZEBRA_ID_PREFIX = 'zebra';
 
@@ -238,30 +227,183 @@ export function zebraDetail(color = '#F1F5F9') {
   useUi.getState().select([el.id], band.id);
 }
 
-// ---- dados
+// ---- dados (árvore "Dados do Relatório")
 
-export function addDataSource() {
-  useReport.getState().update((d) => {
-    let n = d.dataSources.length + 1;
-    while (d.dataSources.some((x) => x.id === `ds_${n}`)) n++;
-    const taken = new Set(d.dataSources.flatMap((x) => x.queries.map((q) => q.name)));
-    let q = 1;
-    while (taken.has(`Query${q}`)) q++;
-    d.dataSources.push({ id: `ds_${n}`, provider: 'sqlite', options: { path: '' }, queries: [{ name: `Query${q}`, sql: 'SELECT 1 AS exemplo' }] });
-  });
-  useUi.getState().set({ leftTab: 'data', showLeft: true, mode: 'design' });
+/** Mostra a barra de dados e abre um diálogo de criação/edição. */
+export function openDataDialog(dialog: DataDialog) {
+  useUi.getState().set({ dialog, showLeft: true, mode: 'design' });
 }
 
-export function newParameter() {
-  useReport.getState().update((d) => {
-    let n = d.parameters.length + 1;
-    while (d.parameters.some((p) => p.name === `param${n}`)) n++;
-    d.parameters.push({ name: `param${n}`, type: 'string', label: `Parâmetro ${n}`, required: false });
-  });
-  useUi.getState().set({ leftTab: 'data', showLeft: true, mode: 'design' });
+export const addDataSource = () => openDataDialog({ kind: 'dataSource' });
+export const newParameter = () => openDataDialog({ kind: 'parameter' });
+export const openConnections = () => openDataDialog({ kind: 'connections' });
+
+/** Nome livre a partir de `base` (`base`, `base2`, ...) — usado nos diálogos de criação. */
+export function freeName(taken: Iterable<string>, base: string, startAt = 1) {
+  const used = new Set(taken);
+  let n = startAt;
+  while (used.has(`${base}${n}`)) n++;
+  return `${base}${n}`;
 }
 
-/** Descobre os campos de todas as queries (1 linha cada) para o painel Dados e o arrastar. */
+export const queryNames = (r: ReportDefinition) => r.dataSources.flatMap((d) => d.queries.map((q) => q.name));
+
+/** Cria (`original` ausente) ou substitui um parâmetro, mantendo as dependências em cascata no novo nome. */
+export function saveParameter(original: string | undefined, p: ParameterDef) {
+  useReport.getState().update((d) => {
+    const i = original === undefined ? -1 : d.parameters.findIndex((x) => x.name === original);
+    if (i < 0) d.parameters.push(p);
+    else d.parameters[i] = p;
+    if (original !== undefined && original !== p.name) {
+      for (const x of d.parameters) if (x.dependsOn) x.dependsOn = x.dependsOn.map((n) => (n === original ? p.name : n));
+      for (const q of d.dataSources.flatMap((ds) => ds.queries)) {
+        for (const pp of q.procedureParams ?? []) if (pp.value.trim() === `:${original}`) pp.value = `:${p.name}`;
+      }
+    }
+  });
+}
+
+export function removeParameter(name: string) {
+  useReport.getState().update((d) => {
+    d.parameters = d.parameters.filter((p) => p.name !== name);
+    for (const x of d.parameters) {
+      if (!x.dependsOn) continue;
+      x.dependsOn = x.dependsOn.filter((n) => n !== name);
+      if (!x.dependsOn.length) delete x.dependsOn;
+    }
+  });
+}
+
+/** Cria ou atualiza a configuração de uma fonte (as queries existentes são preservadas). */
+export function saveDataSource(original: string | undefined, ds: Omit<DataSourceDef, 'queries'>) {
+  useReport.getState().update((d) => {
+    const cur = original === undefined ? undefined : d.dataSources.find((x) => x.id === original);
+    if (cur) Object.assign(cur, { ...ds, queries: cur.queries });
+    else d.dataSources.push({ ...ds, queries: [] });
+  });
+}
+
+export async function removeDataSource(id: string) {
+  const ds = useReport.getState().report.dataSources.find((x) => x.id === id);
+  if (!ds) return;
+  const extra = ds.queries.length ? ` e seus ${ds.queries.length} conjunto(s) de dados` : '';
+  if (!(await dialogs.confirm(`Remover a fonte "${id}"${extra}?`))) return;
+  useReport.getState().update((d) => void (d.dataSources = d.dataSources.filter((x) => x.id !== id)));
+}
+
+/** Renomeia referências a uma query em bandas, tabelas, listas de valores e imagens. */
+function renameQueryRefs(d: Draft<ReportDefinition>, old: string, name: string) {
+  for (const b of d.bands) {
+    if (b.dataSource === old) b.dataSource = name;
+    for (const e of b.elements) if (e.type === 'table' && e.dataSource === old) e.dataSource = name;
+  }
+  for (const p of d.parameters) if (p.availableValues?.query === old) p.availableValues.query = name;
+  for (const img of d.images ?? []) if (img.query === old) img.query = name;
+}
+
+/** Cria ou atualiza um conjunto de dados (query), podendo movê-lo para outra fonte. */
+export function saveDataset(original: string | undefined, dataSourceId: string, q: QueryDef) {
+  useReport.getState().update((d) => {
+    let at: { ds: Draft<DataSourceDef>; i: number } | undefined;
+    for (const ds of d.dataSources) {
+      const i = ds.queries.findIndex((x) => x.name === original);
+      if (original !== undefined && i >= 0) at = { ds, i };
+    }
+    const target = d.dataSources.find((x) => x.id === dataSourceId);
+    if (!target) return;
+    if (at && at.ds.id === dataSourceId) at.ds.queries[at.i] = q;
+    else {
+      if (at) at.ds.queries.splice(at.i, 1);
+      target.queries.push(q);
+    }
+    if (original !== undefined && original !== q.name) renameQueryRefs(d, original, q.name);
+    const detail = d.bands.find((b) => b.type === 'detail');
+    if (original === undefined && detail && !detail.dataSource) detail.dataSource = q.name;
+  });
+  if (original !== undefined && original !== q.name) {
+    const { fields, set } = useUi.getState();
+    if (fields[original]) {
+      const { [original]: known, ...rest } = fields;
+      set({ fields: { ...rest, [q.name]: known } });
+    }
+  }
+}
+
+export async function removeQuery(name: string) {
+  if (!(await dialogs.confirm(`Remover o conjunto de dados "${name}"?`))) return;
+  useReport.getState().update((d) => {
+    for (const ds of d.dataSources) ds.queries = ds.queries.filter((q) => q.name !== name);
+  });
+}
+
+/** Executa a query e guarda os campos (para a árvore e o arrastar). */
+export async function refreshQueryFields(name: string, limit = 1) {
+  const { report, filePath } = useReport.getState();
+  const res = await api.previewReportQuery(report, name, useUi.getState().paramValues, filePath, limit);
+  useUi.getState().set({ fields: { ...useUi.getState().fields, [name]: res.columns } });
+  return res;
+}
+
+export function saveImage(original: string | undefined, img: ImageResource) {
+  useReport.getState().update((d) => {
+    d.images ??= [];
+    const i = original === undefined ? -1 : d.images.findIndex((x) => x.name === original);
+    if (i < 0) d.images.push(img);
+    else d.images[i] = img;
+    if (original !== undefined && original !== img.name) {
+      for (const b of d.bands) {
+        for (const e of b.elements) if (e.type === 'image' && e.source === IMAGE_REF_PREFIX + original) e.source = IMAGE_REF_PREFIX + img.name;
+      }
+    }
+  });
+}
+
+export async function removeImage(name: string) {
+  const r = useReport.getState().report;
+  const users = r.bands.flatMap((b) => b.elements).filter((e) => e.type === 'image' && e.source === IMAGE_REF_PREFIX + name).length;
+  const extra = users ? `\n${users} elemento(s) do relatório usam esta imagem e ficarão sem origem.` : '';
+  if (!(await dialogs.confirm(`Remover a imagem "${name}"?${extra}`))) return;
+  useReport.getState().update((d) => {
+    d.images = (d.images ?? []).filter((x) => x.name !== name);
+    if (!d.images.length) delete d.images;
+  });
+}
+
+/** Cria um grupo (com cabeçalho e rodapé) ou atualiza um existente, renomeando as bandas associadas. */
+export function saveGroup(original: string | undefined, g: GroupDef) {
+  useReport.getState().update((d) => {
+    d.groups ??= [];
+    const i = original === undefined ? -1 : d.groups.findIndex((x) => x.name === original);
+    if (i >= 0) {
+      d.groups[i] = g;
+      if (original !== g.name) for (const b of d.bands) if (b.group === original) b.group = g.name;
+      return;
+    }
+    d.groups.push(g);
+    d.bands.push(createBand(d as ReportDefinition, 'groupHeader', g.name));
+    d.bands.push(createBand(d as ReportDefinition, 'groupFooter', g.name));
+  });
+}
+
+export async function removeGroup(name: string) {
+  if (!(await dialogs.confirm(`Remover o grupo "${name}" e suas bandas?`))) return;
+  useReport.getState().update((d) => {
+    d.groups = (d.groups ?? []).filter((g) => g.name !== name);
+    d.bands = d.bands.filter((b) => b.group !== name);
+  });
+}
+
+/** Sobe o grupo um nível (fica mais externo). */
+export function moveGroupUp(name: string) {
+  useReport.getState().update((d) => {
+    const i = d.groups?.findIndex((g) => g.name === name) ?? -1;
+    if (i <= 0) return;
+    const [x] = d.groups!.splice(i, 1);
+    d.groups!.splice(i - 1, 0, x);
+  });
+}
+
+/** Descobre os campos de todas as queries (1 linha cada) para a árvore Dados do Relatório e o arrastar. */
 export async function refreshAllFields() {
   const { report, filePath } = useReport.getState();
   const queries = report.dataSources.flatMap((d) => d.queries.map((q) => q.name));
@@ -277,7 +419,7 @@ export async function refreshAllFields() {
       }
     }),
   );
-  useUi.getState().set({ fields, leftTab: 'data', showLeft: true });
+  useUi.getState().set({ fields, showLeft: true });
   if (failed.length) useUi.getState().notify(failed.join('\n'), 'error');
   else useUi.getState().notify(`Campos atualizados (${queries.length} quer${queries.length > 1 ? 'ies' : 'y'})`, 'success');
 }

@@ -82,7 +82,7 @@ fn cell(data: &ColumnData<'static>) -> CellValue {
         ColumnData::String(v) => v.as_ref().map_or(CellValue::Null, |s: &Cow<str>| CellValue::Text(s.to_string())),
         ColumnData::Guid(v) => v.map_or(CellValue::Null, |g| CellValue::Text(g.to_string())),
         ColumnData::Numeric(v) => v.map_or(CellValue::Null, |n| CellValue::Float(f64::from(n))),
-        ColumnData::Binary(v) => v.as_ref().map_or(CellValue::Null, |b| CellValue::Text(format!("<binário {} bytes>", b.len()))),
+        ColumnData::Binary(v) => v.as_ref().map_or(CellValue::Null, |b| crate::rowset::binary_cell(b)),
         ColumnData::Date(_) => chrono::NaiveDate::from_sql(data).ok().flatten().map_or(CellValue::Null, CellValue::Date),
         ColumnData::DateTime(_) | ColumnData::SmallDateTime(_) | ColumnData::DateTime2(_) => {
             chrono::NaiveDateTime::from_sql(data).ok().flatten().map_or(CellValue::Null, CellValue::DateTime)

@@ -1,5 +1,5 @@
 import type { Draft } from 'immer';
-import type { Align, Band, PaperSize, ReportElement, Style, TableColumn, VerticalAlign } from '../../domain/types';
+import { IMAGE_REF_PREFIX, type Align, type Band, type PaperSize, type ReportElement, type Style, type TableColumn, type VerticalAlign } from '../../domain/types';
 import { BAND_LABELS, pageSize, printableWidth } from '../../domain/geometry';
 import { ColorInput, Field, NumberInput, Section, Select, TextInput, Toggle } from '../../components/ui';
 import { draftElement, findElement, useReport } from '../../state/reportStore';
@@ -81,7 +81,14 @@ function ElementProps({ el, band }: { el: ReportElement; band: Band }) {
         )}
         {el.type === 'image' && (
           <>
-            <Field label="Origem" hint="Caminho relativo ao .nrep, absoluto ou data: URI">
+            <Field label="Imagem do relatório" hint="Recursos de Dados do Relatório › Imagens">
+              <Select
+                value={el.source.startsWith(IMAGE_REF_PREFIX) ? el.source.slice(IMAGE_REF_PREFIX.length) : ''}
+                options={[{ value: '', label: '(origem direta)' }, ...(useReport.getState().report.images ?? []).map((i) => ({ value: i.name, label: i.name }))]}
+                onChange={(v) => edit('src', (e) => void (e.type === 'image' && (e.source = v ? IMAGE_REF_PREFIX + v : '')))}
+              />
+            </Field>
+            <Field label="Origem" hint="image:nome, caminho relativo ao .nrep, absoluto ou data: URI">
               <span className="row">
                 <TextInput value={el.source} mono onCommit={(v) => edit('src', (e) => void (e.type === 'image' && (e.source = v)))} />
                 <button
@@ -445,7 +452,7 @@ function ReportProps() {
             </button>
           ))}
         </div>
-        <p className="muted small">Bandas de grupo são criadas no painel Dados → Grupos.</p>
+        <p className="muted small">Bandas de grupo são criadas em Dados do Relatório › Grupos.</p>
       </Section>
     </div>
   );

@@ -134,3 +134,13 @@ fn preprocess_param_label_alias() {
     assert_eq!(preprocess("Params.fab.Labels"), "Params.fab.Labels");
     assert_eq!(preprocess("MyParams.fab.Label"), "MyParams.fab.Label");
 }
+
+#[test]
+fn report_info_and_user_name() {
+    let mut e = FormulaEngine::new(&HashMap::new(), "Teste");
+    e.set_report_info("FileName", "vendas.nrep");
+    assert_eq!(e.eval_string("Report.FileName").unwrap(), "vendas.nrep");
+    assert_eq!(e.eval_string("Report.Author").unwrap(), "");
+    assert_eq!(e.eval_string("Report.ExecutionTime").unwrap().len(), 19);
+    assert!(e.eval("USER_NAME()").is_ok());
+}

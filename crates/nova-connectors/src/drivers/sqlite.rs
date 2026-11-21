@@ -72,7 +72,7 @@ pub(crate) fn query_blocking(path: &PathBuf, sql: &str, params: &HashMap<String,
                 ValueRef::Integer(v) => CellValue::Int(v),
                 ValueRef::Real(v) => CellValue::Float(v),
                 ValueRef::Text(t) => CellValue::Text(String::from_utf8_lossy(t).into_owned()),
-                ValueRef::Blob(b) => CellValue::Text(format!("<blob {} bytes>", b.len())),
+                ValueRef::Blob(b) => crate::rowset::binary_cell(b),
             });
         }
         rs.rows.push(out);

@@ -60,7 +60,7 @@ where
     typed
         .or_else(|| row.try_get::<String, _>(i).ok().map(CellValue::Text))
         .or_else(|| row.try_get_unchecked::<String, _>(i).ok().map(CellValue::Text))
-        .or_else(|| row.try_get_unchecked::<Vec<u8>, _>(i).ok().map(|b| CellValue::Text(String::from_utf8_lossy(&b).into_owned())))
+        .or_else(|| row.try_get_unchecked::<Vec<u8>, _>(i).ok().map(|b| match String::from_utf8(b) { Ok(s) => CellValue::Text(s), Err(e) => crate::rowset::binary_cell(e.as_bytes()) }))
         .unwrap_or(CellValue::Null)
 }
 
