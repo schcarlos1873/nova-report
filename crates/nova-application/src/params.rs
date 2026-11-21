@@ -53,6 +53,19 @@ fn resolve_one(p: &ParameterDef, given: Option<&serde_json::Value>) -> AppResult
     })
 }
 
+/// Troca cada valor escolhido pelo rótulo da lista de `availableValues` (o próprio valor em texto
+/// quando ele não está na lista), mantendo o formato: texto para valor simples, lista para vários.
+pub fn labels_for(value: &ParamValue, options: &[crate::ParameterOption]) -> ParamValue {
+    match value {
+        ParamValue::Null => ParamValue::Null,
+        ParamValue::List(v) => ParamValue::List(v.iter().map(|x| labels_for(x, options)).collect()),
+        one => {
+            let json = one.to_json();
+            ParamValue::Text(options.iter().find(|o| o.value == json).map_or_else(|| one.to_text(), |o| o.label.clone()))
+        }
+    }
+}
+
 fn dynamic_default(ty: ParamType, d: &serde_json::Value) -> serde_json::Value {
     use chrono::Datelike;
     let today = chrono::Local::now().date_naive();
@@ -102,5 +115,19 @@ mod tests {
         let p = resolve_lenient(&def(), &raw);
         assert_eq!(p["fab"], ParamValue::Null);
         assert_eq!(p["st"], ParamValue::List(vec![ParamValue::Text("A".into())]));
+    }
+
+    #[test]
+    fn labels_follow_value_shape() {
+        let opts = vec![
+            crate::ParameterOption { value: json!(1), label: "Norte".into() },
+            crate::ParameterOption { value: json!(2), label: "Sul".into() },
+        ];
+        assert_eq!(labels_for(&ParamValue::Int(2), &opts), ParamValue::Text("Sul".into()));
+        assert_eq!(
+            labels_for(&ParamValue::List(vec![ParamValue::Int(1), ParamValue::Int(9)]), &opts),
+            ParamValue::List(vec![ParamValue::Text("Norte".into()), ParamValue::Text("9".into())])
+        );
+        assert_eq!(labels_for(&ParamValue::Null, &opts), ParamValue::Null);
     }
 }

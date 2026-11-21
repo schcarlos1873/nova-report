@@ -32,7 +32,8 @@ pub struct ReportProcessor<'a> {
 
 impl<'a> ReportProcessor<'a> {
     pub fn new(def: &'a ReportDefinition, data: &'a DataContext, base_dir: Option<&Path>) -> Self {
-        let engine = FormulaEngine::new(&data.parameters, &def.meta.title);
+        let mut engine = FormulaEngine::new(&data.parameters, &def.meta.title);
+        engine.set_param_labels(&data.param_labels);
         let main = def.main_query_name().and_then(|q| data.datasets.get(&q).cloned());
         Self { def, data, engine, assets: AssetResolver::new(base_dir), warnings: vec![], main }
     }

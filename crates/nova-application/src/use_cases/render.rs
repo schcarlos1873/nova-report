@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use nova_domain::ParamValue;
 use nova_domain::report::ReportDefinition;
 use nova_engine::data::{DataContext, DataRequest};
 use nova_engine::layout::ReportProcessor;
@@ -14,11 +15,14 @@ use tokio::sync::Mutex;
 
 use crate::connection_resolver::ConnectionResolver;
 use crate::ports::ConnectorGateway;
+use crate::use_cases::connections::fetch_options;
 use crate::{AppError, AppResult, params};
 
 /// Dados reaproveitados entre previews quando só o layout muda (meta: < 50 ms).
 const DATA_CACHE_TTL: Duration = Duration::from_secs(120);
 const MAX_PREVIEW_PAGES: usize = 500;
+/// Linhas lidas da lista de valores para achar os rótulos; valores além disso mostram o próprio valor.
+const LABEL_LOOKUP_LIMIT: usize = 10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -127,11 +131,38 @@ impl RenderService {
                 requests.push(DataRequest { name: q.name.clone(), provider: provider.clone(), query: q.sql.clone() });
             }
         }
-        let data = DataContext::load_all(requests, parameters).await?;
+        let param_labels = self.param_labels(def, &parameters, base_dir).await?;
+        let mut data = DataContext::load_all(requests, parameters).await?;
+        data.param_labels = param_labels;
         stats.data_ms = start.elapsed().as_millis();
         stats.rows = data.datasets.iter().map(|(k, v)| (k.clone(), v.height())).collect();
         *self.cache.lock().await = Some(CacheEntry { key, loaded_at: Instant::now(), data: data.clone() });
         Ok((data, stats))
+    }
+
+    /// `ParamLabels.<nome>`: rótulos (`labelField`) dos valores escolhidos, buscados na query de
+    /// `availableValues` com os parâmetros já resolvidos (a cascata vale aqui também).
+    /// Só consulta o banco se alguma expressão usa rótulos.
+    async fn param_labels(
+        &self,
+        def: &ReportDefinition,
+        parameters: &HashMap<String, ParamValue>,
+        base_dir: Option<&std::path::Path>,
+    ) -> AppResult<HashMap<String, ParamValue>> {
+        let text = serde_json::to_string(&def.bands).unwrap_or_default();
+        if !text.contains("ParamLabels.") && !text.contains(".Label") {
+            return Ok(HashMap::new());
+        }
+        let lookups = def.parameters.iter().filter_map(|p| {
+            let has_label = p.available_values.as_ref()?.label_field.as_deref().is_some_and(|f| !f.is_empty());
+            let value = parameters.get(&p.name).filter(|v| has_label && !v.is_empty())?;
+            Some(async move {
+                let (options, _) =
+                    fetch_options(self.gateway.as_ref(), &self.resolver, def, p, parameters.clone(), base_dir, LABEL_LOOKUP_LIMIT).await?;
+                Ok::<_, AppError>((p.name.clone(), params::labels_for(value, &options)))
+            })
+        });
+        futures::future::join_all(lookups).await.into_iter().collect()
     }
 
     async fn render(

@@ -9,7 +9,7 @@ const FUNCTIONS = [
   'IIF(cond, a, b)', 'FORMAT_DATE(v, "%d/%m/%Y")', 'Format.currency(v, "BRL")', 'Format.number(v, 2)', 'Format.percent(v, 1)',
   'ROUND(v, 2)', 'UPPER(v)', 'LOWER(v)', 'TRIM(v)', 'LEFT(v, n)', 'RIGHT(v, n)', 'LEN(v)', 'COALESCE(a, b)', 'ISNULL(v)',
   'TODAY()', 'NOW()', 'RECORD_NUMBER()', 'PAGE_NUMBER()', 'TOTAL_PAGES()', 'Report.Title', 'Group.Count',
-  'JOIN(Params.lista, ", ")', 'CONTAINS(Params.lista, v)',
+  'JOIN(Params.lista, ", ")', 'CONTAINS(Params.lista, v)', 'JOIN(ParamLabels.lista, ", ")',
 ];
 
 /** Campo de expressão com botão para abrir o editor completo (validação de sintaxe no motor Rhai). */
@@ -68,6 +68,9 @@ export function ExpressionEditor({ initial, onSave, onClose }: { initial: string
           <div>
             <h4>Parâmetros</h4>
             {report.parameters.map((p) => <button key={p.name} className="chip" onClick={() => insert(`Params.${p.name}`)}>{p.name}</button>)}
+            {report.parameters.filter((p) => p.availableValues?.labelField).map((p) => (
+              <button key={`${p.name}-label`} className="chip" title="Rótulo dos valores escolhidos" onClick={() => insert(`ParamLabels.${p.name}`)}>{p.name} (rótulo)</button>
+            ))}
           </div>
           <div>
             <h4>Funções</h4>

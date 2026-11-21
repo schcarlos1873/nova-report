@@ -102,3 +102,35 @@ fn multi_value_params_are_arrays() {
     assert_eq!(e.eval_string("CONTAINS(Params.maq, \"M2\")").unwrap(), "true");
     assert_eq!(e.eval_string("JOIN(Params.vazio, \", \")").unwrap(), "");
 }
+
+#[test]
+fn param_labels_follow_params_shape() {
+    let params = HashMap::from([
+        ("fab".to_string(), ParamValue::List(vec![ParamValue::Int(1), ParamValue::Int(2)])),
+        ("turno".to_string(), ParamValue::Int(3)),
+        ("obs".to_string(), ParamValue::Text("livre".into())),
+    ]);
+    let mut e = FormulaEngine::new(&params, "Teste");
+    e.set_param_labels(&HashMap::from([
+        ("fab".to_string(), ParamValue::List(vec![ParamValue::Text("Norte".into()), ParamValue::Text("Sul".into())])),
+        ("turno".to_string(), ParamValue::Text("Noite".into())),
+    ]));
+    assert_eq!(e.eval_string("JOIN(ParamLabels.fab, \", \")").unwrap(), "Norte, Sul");
+    assert_eq!(e.eval_string("ParamLabels.turno").unwrap(), "Noite");
+    assert_eq!(e.eval_string("Params.turno.Label").unwrap(), "Noite");
+    assert_eq!(e.eval_string("JOIN(Params.fab.Label, '/')").unwrap(), "Norte/Sul");
+    // sem lista de valores, o rótulo é o próprio valor
+    assert_eq!(e.eval_string("ParamLabels.obs").unwrap(), "livre");
+    assert_eq!(e.eval_string("Params.turno").unwrap(), "3");
+}
+
+#[test]
+fn preprocess_param_label_alias() {
+    assert_eq!(preprocess("Params.fab.Label"), "ParamLabels.fab");
+    assert_eq!(preprocess("JOIN(Params.fab.Label, ', ')"), "JOIN(ParamLabels.fab, \", \")");
+    // dentro de strings e em nomes parecidos, nada muda
+    assert_eq!(preprocess("'Params.fab.Label'"), "\"Params.fab.Label\"");
+    assert_eq!(preprocess("\"a\\\"Params.x.Label\""), "\"a\\\"Params.x.Label\"");
+    assert_eq!(preprocess("Params.fab.Labels"), "Params.fab.Labels");
+    assert_eq!(preprocess("MyParams.fab.Label"), "MyParams.fab.Label");
+}

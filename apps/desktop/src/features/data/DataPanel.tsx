@@ -182,6 +182,7 @@ function ParamCard({ index: i }: { index: number }) {
       )}
       <p className="muted small mono">
         {p.multiValue ? `IN (:${p.name}) na SQL · JOIN(Params.${p.name}, ", ")` : `:${p.name} na SQL · Params.${p.name}`} nas expressões
+        {p.availableValues?.labelField && ` · rótulo: ${p.multiValue ? `JOIN(ParamLabels.${p.name}, ", ")` : `ParamLabels.${p.name}`}`}
       </p>
     </div>
   );

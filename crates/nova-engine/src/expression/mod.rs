@@ -3,6 +3,7 @@
 //! Variáveis disponíveis nas expressões:
 //! * `Fields.<coluna>` — linha corrente do dataset;
 //! * `Params.<nome>` — parâmetros do relatório (array quando o parâmetro aceita vários valores);
+//! * `ParamLabels.<nome>` (ou `Params.<nome>.Label`) — rótulo dos valores escolhidos, no mesmo formato de `Params`;
 //! * `Group.Sum_<coluna>` / `Group.Count` — agregados do escopo atual (grupo ou relatório);
 //! * `Report.Title`, `Report.RecordCount`;
 //! * `Format.currency(v, "BRL")`, `Format.number(v, 2)`, `Format.percent(v, 1)`, `Format.date(v, fmt)`.
@@ -98,6 +99,7 @@ pub struct FormulaEngine {
     fields: Map,
     group: Map,
     params: Map,
+    param_labels: Map,
     report: Map,
 }
 
@@ -120,11 +122,23 @@ impl FormulaEngine {
             .iter()
             .map(|(k, v)| (k.as_str().into(), param_to_dynamic(v)))
             .collect();
+        // sem lista de valores, o rótulo é o próprio valor em texto
+        let param_labels = parameters
+            .iter()
+            .map(|(k, v)| (k.as_str().into(), label_to_dynamic(v)))
+            .collect();
         let mut report = Map::new();
         report.insert("Title".into(), report_title.to_string().into());
         report.insert("RecordCount".into(), Dynamic::from(0_i64));
 
-        Self { engine, cache: HashMap::new(), state, fields: Map::new(), group: Map::new(), params, report }
+        Self { engine, cache: HashMap::new(), state, fields: Map::new(), group: Map::new(), params, param_labels, report }
+    }
+
+    /// Rótulos resolvidos a partir de `availableValues`; substituem o texto do valor.
+    pub fn set_param_labels(&mut self, labels: &HashMap<String, ParamValue>) {
+        for (k, v) in labels {
+            self.param_labels.insert(k.as_str().into(), label_to_dynamic(v));
+        }
     }
 
     /// Valida a sintaxe de uma expressão sem executá-la.
@@ -216,6 +230,7 @@ impl FormulaEngine {
         let mut scope = Scope::new();
         scope.push_constant("Fields", self.fields.clone());
         scope.push_constant("Params", self.params.clone());
+        scope.push_constant("ParamLabels", self.param_labels.clone());
         scope.push_constant("Group", self.group.clone());
         scope.push_constant("Report", self.report.clone());
         scope.push("Format", FormatNs);
@@ -313,6 +328,14 @@ fn param_to_dynamic(v: &ParamValue) -> Dynamic {
         ParamValue::Bool(b) => (*b).into(),
         ParamValue::Null => Dynamic::UNIT,
         ParamValue::List(v) => Dynamic::from_array(v.iter().map(param_to_dynamic).collect()),
+        other => other.to_text().into(),
+    }
+}
+
+fn label_to_dynamic(v: &ParamValue) -> Dynamic {
+    match v {
+        ParamValue::Null => Dynamic::UNIT,
+        ParamValue::List(v) => Dynamic::from_array(v.iter().map(label_to_dynamic).collect()),
         other => other.to_text().into(),
     }
 }

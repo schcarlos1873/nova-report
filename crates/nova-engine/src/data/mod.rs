@@ -39,6 +39,9 @@ pub struct DataRequest {
 pub struct DataContext {
     pub datasets: HashMap<String, DataFrame>,
     pub parameters: HashMap<String, ParamValue>,
+    /// Rótulos dos valores escolhidos (`labelField` de `availableValues`), expostos como `ParamLabels.<nome>`.
+    /// Parâmetros ausentes caem no texto do próprio valor.
+    pub param_labels: HashMap<String, ParamValue>,
 }
 
 impl DataContext {
@@ -63,7 +66,7 @@ impl DataContext {
             let (name, df) = res?;
             datasets.insert(name, df);
         }
-        Ok(Self { datasets, parameters })
+        Ok(Self { datasets, parameters, param_labels: HashMap::new() })
     }
 
     pub fn dataset(&self, name: &str) -> EngineResult<&DataFrame> {

@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use nova_domain::ParamValue;
 use nova_domain::connection::{ConnectionConfig, ConnectionProfile, DatabaseTree};
-use nova_domain::report::ReportDefinition;
+use nova_domain::report::{ParameterDef, ReportDefinition};
 use nova_engine::data::CellValue;
 use serde::Serialize;
 
@@ -120,7 +120,7 @@ impl ConnectionService {
     ) -> AppResult<QueryPreview> {
         let cfg = self.resolver.by_alias(alias)?;
         let params = raw_params.iter().map(|(k, v)| (k.clone(), json_param(v))).collect();
-        self.run_preview(cfg, sql, params, limit).await
+        run_preview(self.gateway.as_ref(), cfg, sql, params, limit).await
     }
 
     /// Executa uma query declarada no relatório (usada para descobrir campos no designer).
@@ -136,7 +136,7 @@ impl ConnectionService {
         let cfg = self.resolver.for_data_source(ds, base_dir)?;
         // no designer, parâmetros obrigatórios podem estar vazios: os preenchidos continuam valendo
         let params = params::resolve_lenient(def, raw_params);
-        self.run_preview(cfg, &q.sql, params, limit).await
+        run_preview(self.gateway.as_ref(), cfg, &q.sql, params, limit).await
     }
 
     /// Lista de valores de um parâmetro com `availableValues` (filtros em cascata).
@@ -150,7 +150,9 @@ impl ConnectionService {
         limit: usize,
     ) -> AppResult<ParameterValues> {
         let p = def.parameters.iter().find(|p| p.name == name).ok_or_else(|| AppError::Invalid(format!("parâmetro '{name}' não existe")))?;
-        let av = p.available_values.as_ref().ok_or_else(|| AppError::Invalid(format!("parâmetro '{name}' não tem lista de valores")))?;
+        if p.available_values.is_none() {
+            return Err(AppError::Invalid(format!("parâmetro '{name}' não tem lista de valores")));
+        }
         let params = params::resolve_lenient(def, raw_params);
         let waiting_for: Vec<String> = p
             .depends_on
@@ -162,59 +164,75 @@ impl ConnectionService {
             return Ok(ParameterValues { values: vec![], truncated: false, waiting_for });
         }
 
-        let (ds, q) = def.find_query(&av.query).ok_or_else(|| AppError::Invalid(format!("query '{}' não existe", av.query)))?;
-        let cfg = self.resolver.for_data_source(ds, base_dir)?;
-        let preview = self.run_preview(cfg, &q.sql, params, limit + 1).await?;
-        let col = |field: &str| {
-            preview.columns.iter().position(|c| c.name.eq_ignore_ascii_case(field)).ok_or_else(|| {
-                let found: Vec<&str> = preview.columns.iter().map(|c| c.name.as_str()).collect();
-                AppError::Invalid(format!("a query '{}' não tem a coluna '{field}' (colunas: {})", q.name, found.join(", ")))
-            })
-        };
-        let vi = col(&av.value_field)?;
-        let li = av.label_field.as_deref().filter(|f| !f.is_empty()).map(col).transpose()?.unwrap_or(vi);
-
-        let truncated = preview.rows.len() > limit;
-        let mut values: Vec<ParameterOption> = Vec::new();
-        for row in preview.rows.iter().take(limit) {
-            let cell = &row[vi];
-            if *cell == CellValue::Null {
-                continue;
-            }
-            // mesmo tipo que o relatório vai receber (ex.: Id inteiro de um parâmetro `int`)
-            let raw = serde_json::to_value(cell).unwrap_or(serde_json::Value::Null);
-            let value = ParamValue::coerce(&p.name, p.param_type, &raw).map_err(AppError::from)?.to_json();
-            if values.iter().any(|o| o.value == value) {
-                continue;
-            }
-            values.push(ParameterOption { value, label: row[li].to_display() });
-        }
+        let (values, truncated) = fetch_options(self.gateway.as_ref(), &self.resolver, def, p, params, base_dir, limit).await?;
         Ok(ParameterValues { values, truncated, waiting_for: vec![] })
     }
+}
 
-    async fn run_preview(&self, cfg: ConnectionConfig, sql: &str, params: HashMap<String, ParamValue>, limit: usize) -> AppResult<QueryPreview> {
-        let kind = cfg.profile.provider;
-        let sql = if kind.is_sql() { self.gateway.paginate(kind, sql, limit) } else { sql.to_string() };
-        let provider = self.gateway.provider(cfg)?;
-        let start = Instant::now();
-        let df = provider.execute_query(&sql, &params).await?;
-        let elapsed_ms = start.elapsed().as_millis();
-        let df = df.head(Some(limit));
-        let columns = df
-            .columns()
-            .iter()
-            .map(|c| PreviewColumn { name: c.name().to_string(), data_type: c.dtype().to_string() })
-            .collect();
-        let mut rows = Vec::with_capacity(df.height());
-        for r in 0..df.height() {
-            let mut row = Vec::with_capacity(df.width());
-            for c in df.columns() {
-                row.push(c.get(r).map(|v| CellValue::from_any(&v)).unwrap_or(CellValue::Null));
-            }
-            rows.push(row);
+/// Executa a query de `availableValues` de `p` e devolve as opções (valor já no tipo do parâmetro)
+/// e se a lista foi truncada em `limit`. Compartilhada entre a lista da UI e os rótulos do render.
+pub(crate) async fn fetch_options(
+    gateway: &dyn ConnectorGateway,
+    resolver: &ConnectionResolver,
+    def: &ReportDefinition,
+    p: &ParameterDef,
+    params: HashMap<String, ParamValue>,
+    base_dir: Option<&std::path::Path>,
+    limit: usize,
+) -> AppResult<(Vec<ParameterOption>, bool)> {
+    let av = p.available_values.as_ref().ok_or_else(|| AppError::Invalid(format!("parâmetro '{}' não tem lista de valores", p.name)))?;
+    let (ds, q) = def.find_query(&av.query).ok_or_else(|| AppError::Invalid(format!("query '{}' não existe", av.query)))?;
+    let cfg = resolver.for_data_source(ds, base_dir)?;
+    let preview = run_preview(gateway, cfg, &q.sql, params, limit + 1).await?;
+    let col = |field: &str| {
+        preview.columns.iter().position(|c| c.name.eq_ignore_ascii_case(field)).ok_or_else(|| {
+            let found: Vec<&str> = preview.columns.iter().map(|c| c.name.as_str()).collect();
+            AppError::Invalid(format!("a query '{}' não tem a coluna '{field}' (colunas: {})", q.name, found.join(", ")))
+        })
+    };
+    let vi = col(&av.value_field)?;
+    let li = av.label_field.as_deref().filter(|f| !f.is_empty()).map(col).transpose()?.unwrap_or(vi);
+
+    let truncated = preview.rows.len() > limit;
+    let mut values: Vec<ParameterOption> = Vec::new();
+    for row in preview.rows.iter().take(limit) {
+        let cell = &row[vi];
+        if *cell == CellValue::Null {
+            continue;
         }
-        Ok(QueryPreview { columns, rows, elapsed_ms })
+        // mesmo tipo que o relatório vai receber (ex.: Id inteiro de um parâmetro `int`)
+        let raw = serde_json::to_value(cell).unwrap_or(serde_json::Value::Null);
+        let value = ParamValue::coerce(&p.name, p.param_type, &raw).map_err(AppError::from)?.to_json();
+        if values.iter().any(|o| o.value == value) {
+            continue;
+        }
+        values.push(ParameterOption { value, label: row[li].to_display() });
     }
+    Ok((values, truncated))
+}
+
+async fn run_preview(gateway: &dyn ConnectorGateway, cfg: ConnectionConfig, sql: &str, params: HashMap<String, ParamValue>, limit: usize) -> AppResult<QueryPreview> {
+    let kind = cfg.profile.provider;
+    let sql = if kind.is_sql() { gateway.paginate(kind, sql, limit) } else { sql.to_string() };
+    let provider = gateway.provider(cfg)?;
+    let start = Instant::now();
+    let df = provider.execute_query(&sql, &params).await?;
+    let elapsed_ms = start.elapsed().as_millis();
+    let df = df.head(Some(limit));
+    let columns = df
+        .columns()
+        .iter()
+        .map(|c| PreviewColumn { name: c.name().to_string(), data_type: c.dtype().to_string() })
+        .collect();
+    let mut rows = Vec::with_capacity(df.height());
+    for r in 0..df.height() {
+        let mut row = Vec::with_capacity(df.width());
+        for c in df.columns() {
+            row.push(c.get(r).map(|v| CellValue::from_any(&v)).unwrap_or(CellValue::Null));
+        }
+        rows.push(row);
+    }
+    Ok(QueryPreview { columns, rows, elapsed_ms })
 }
 
 fn json_param(v: &serde_json::Value) -> ParamValue {

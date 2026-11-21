@@ -50,7 +50,7 @@ fn data(rows: usize) -> DataContext {
     }
     let mut datasets = HashMap::new();
     datasets.insert("Pedidos".to_string(), b.finish().unwrap());
-    DataContext { datasets, parameters: HashMap::new() }
+    DataContext { datasets, ..Default::default() }
 }
 
 fn texts(band: &crate::render::RenderedBand) -> Vec<String> {

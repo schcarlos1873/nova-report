@@ -1,0 +1,995 @@
+{
+  "$schema": "https://novareport.io/schemas/v1/report.json",
+  "schemaVersion": "1.0",
+  "meta": {
+    "title": "semi-acabado.nrep",
+    "description": "Relatório de semiacabado",
+    "author": "Carlos A. Schnaider",
+    "paperSize": "A4",
+    "orientation": "landscape",
+    "margins": {
+      "top": 10.0,
+      "bottom": 10.0,
+      "left": 15.0,
+      "right": 15.0
+    }
+  },
+  "dataSources": [
+    {
+      "id": "dbmesqas",
+      "provider": "mssql",
+      "connectionRef": "dbmesqas",
+      "options": {
+        "path": ""
+      },
+      "queries": [
+        {
+          "name": "MastFactory",
+          "sql": "select mf.Id, mf.Code from MastFactory mf where mf.IsActive = 1 order by mf.Code"
+        },
+        {
+          "name": "MastMachineType",
+          "sql": "select mmt.Id, mmt.Code from MastMachineType mmt where mmt.IsActive = 1"
+        },
+        {
+          "name": "MastMachine",
+          "sql": "select m.Id, m.Code from MastMachine m where m.IsActive = 1 and m.FactoryId in (:factoryId) and m.MachineTypeId in (:machineType)"
+        },
+        {
+          "name": "ProdUnit",
+          "sql": "select mm.Code MachineId\n, pu.UnitNum\n, pu.WoundDateTime, pu.WidthActual\n, pu.DiameterActual , pu.LengthLinear\n, pu.WeightEstimated , pu.WeightScaled \n, pu.ScaledDateTime , pu.BSWActual \n, mm.Code MachineCode, pu.CreatedBy  \n, soh.OrderNum, soi.OrderItemNum \n, mgs.Code GradeSpec, mgs.BSWNominal, mgs.Caliper  \n, mp.WidthActual RollWidth, mp.LengthLineal RollLength\n, mp.RollsPerPack , mp.DiameterActual RollDiam\n, mp.Weight ProductWeigth\n, prh.Run, pat.Pattern \nfrom ProdUnit pu \ninner join MastMachine mm on pu.MachineId  = mm.Id\ninner join PlanRunPosition  prp on prp.Id = pu.RunPositionId\ninner join PlanRunPattern pat on pat.Id = prp.RunPatternId\ninner join PlanRunHeader prh on prh.Id = pat.RunHeaderId\ninner join ServOrderItem soi on soi.Id  = pu.OrderItemId \ninner join ServOrderHeader soh on soh.Id = soi.OrderId \ninner join MastGradeSpec mgs on mgs.Id =  prh.GradeSpecId \ninner join MastProduct mp on mp.Id = soi.ProductId \nWHERE pu.MachineId  in (:machineId) and pu.WoundDateTime between :beginDate and :endDate\nORDER BY MachineId, pu.WoundDateTime "
+        }
+      ]
+    }
+  ],
+  "parameters": [
+    {
+      "name": "factoryId",
+      "type": "string",
+      "label": "Fábrica",
+      "required": true,
+      "availableValues": {
+        "query": "MastFactory",
+        "valueField": "Id",
+        "labelField": "Code"
+      }
+    },
+    {
+      "name": "machineType",
+      "type": "string",
+      "label": "Tipo de Máquina",
+      "required": true,
+      "availableValues": {
+        "query": "MastMachineType",
+        "valueField": "Id",
+        "labelField": "Code"
+      }
+    },
+    {
+      "name": "machineId",
+      "type": "int",
+      "label": "Máquina:",
+      "required": true,
+      "multiValue": true,
+      "dependsOn": [
+        "factoryId",
+        "machineType"
+      ],
+      "availableValues": {
+        "query": "MastMachine",
+        "valueField": "Id",
+        "labelField": "Code"
+      }
+    },
+    {
+      "name": "beginDate",
+      "type": "datetime",
+      "label": "Data Inicial:",
+      "required": false
+    },
+    {
+      "name": "endDate",
+      "type": "datetime",
+      "label": "Data Final:",
+      "required": false
+    }
+  ],
+  "groups": [
+    {
+      "name": "Machine",
+      "expression": "Fields.MachineId"
+    }
+  ],
+  "bands": [
+    {
+      "id": "report_header_1",
+      "type": "reportHeader",
+      "height": 20.0,
+      "elements": [
+        {
+          "id": "rct_1",
+          "type": "rectangle",
+          "radius": 0.0,
+          "x": 0.0,
+          "y": 0.0,
+          "width": 266.0,
+          "height": 19.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.5,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_1",
+          "type": "label",
+          "text": "Relatório de Inventário.",
+          "x": 95.8,
+          "y": 1.5,
+          "width": 167.0,
+          "height": 8.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 24.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "img_1",
+          "type": "image",
+          "source": "/Users/carlos/projetos/nova-report/examples/pslogo.jpg",
+          "fit": "contain",
+          "x": 1.0,
+          "y": 0.0,
+          "width": 59.0,
+          "height": 18.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_16",
+          "type": "expression",
+          "expression": "\"Fábrica: \" + ParamLabels.factoryId + \",  Tipo de Máq.: \" + ParamLabels.machineType +\",  Período: \" + FORMAT_DATE(Params.beginDate, '%d/%m/%Y') + \" a \" + FORMAT_DATE(Params.endDate, '%d/%m/%Y')",
+          "x": 68.8,
+          "y": 12.0,
+          "width": 195.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "page_header_1",
+      "type": "pageHeader",
+      "height": 6.0,
+      "elements": []
+    },
+    {
+      "id": "group_header_1",
+      "type": "groupHeader",
+      "height": 16.0,
+      "group": "Machine",
+      "elements": [
+        {
+          "id": "fld_1",
+          "type": "expression",
+          "expression": "Fields.MachineId",
+          "x": 1.0,
+          "y": 1.0,
+          "width": 58.0,
+          "height": 8.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 15.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#0061ff",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "txt_2",
+          "type": "label",
+          "text": "Unidade",
+          "x": 0.0,
+          "y": 10.0,
+          "width": 27.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_3",
+          "type": "label",
+          "text": "Data Produção",
+          "x": 27.0,
+          "y": 10.0,
+          "width": 34.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_4",
+          "type": "label",
+          "text": "Spec Fam",
+          "x": 60.7,
+          "y": 10.0,
+          "width": 23.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_5",
+          "type": "label",
+          "text": "Pedido",
+          "x": 83.0,
+          "y": 10.0,
+          "width": 23.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_6",
+          "type": "label",
+          "text": "It",
+          "x": 106.0,
+          "y": 10.0,
+          "width": 12.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_7",
+          "type": "label",
+          "text": "Largura",
+          "x": 118.0,
+          "y": 10.0,
+          "width": 16.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_8",
+          "type": "label",
+          "text": "Metragem",
+          "x": 133.8,
+          "y": 10.0,
+          "width": 22.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_9",
+          "type": "label",
+          "text": "Grm/m2",
+          "x": 155.20000000000002,
+          "y": 10.0,
+          "width": 16.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_10",
+          "type": "label",
+          "text": "Tbob",
+          "x": 171.0,
+          "y": 10.0,
+          "width": 11.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_11",
+          "type": "label",
+          "text": "Corrida",
+          "x": 182.0,
+          "y": 10.0,
+          "width": 15.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_12",
+          "type": "label",
+          "text": "Padrão",
+          "x": 197.0,
+          "y": 10.0,
+          "width": 14.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_13",
+          "type": "label",
+          "text": "Peso Real",
+          "x": 211.0,
+          "y": 10.0,
+          "width": 20.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        },
+        {
+          "id": "txt_14",
+          "type": "label",
+          "text": "Data Pesagem",
+          "x": 231.0,
+          "y": 10.0,
+          "width": 36.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "background": "#EBEBEB",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "id": "detail_1",
+      "type": "detail",
+      "height": 6.0,
+      "dataSource": "ProdUnit",
+      "elements": [
+        {
+          "id": "rct_2",
+          "type": "rectangle",
+          "radius": 0.0,
+          "x": 0.0,
+          "y": 0.0,
+          "width": 267.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          },
+          "backgroundExpression": "IIF(RECORD_NUMBER() % 2 == 0, \"#EEF2FF\", \"#FFFFFF\")"
+        },
+        {
+          "id": "fld_2",
+          "type": "expression",
+          "expression": "Fields.UnitNum",
+          "x": 0.0,
+          "y": 0.0,
+          "width": 26.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_6",
+          "type": "expression",
+          "expression": "Fields.RollLength",
+          "format": "number:2",
+          "x": 133.8,
+          "y": 0.0,
+          "width": 21.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_7",
+          "type": "expression",
+          "expression": "Fields.BSWNominal",
+          "format": "number:2",
+          "x": 155.20000000000002,
+          "y": 0.0,
+          "width": 15.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_10",
+          "type": "expression",
+          "expression": "Fields.RollsPerPack",
+          "format": "number:0",
+          "x": 171.0,
+          "y": 0.0,
+          "width": 10.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_11",
+          "type": "expression",
+          "expression": "Fields.Run",
+          "format": "number:0",
+          "x": 182.0,
+          "y": 0.0,
+          "width": 14.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_12",
+          "type": "expression",
+          "expression": "Fields.Pattern",
+          "format": "number:2",
+          "x": 197.0,
+          "y": 0.0,
+          "width": 13.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_3",
+          "type": "expression",
+          "expression": "Fields.WoundDateTime",
+          "format": "date:%d/%m/%Y %H:%M",
+          "x": 27.0,
+          "y": 0.0,
+          "width": 33.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_4",
+          "type": "expression",
+          "expression": "Fields.GradeSpec",
+          "x": 61.0,
+          "y": 0.0,
+          "width": 21.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_9",
+          "type": "expression",
+          "expression": "Fields.OrderNum",
+          "x": 83.0,
+          "y": 0.0,
+          "width": 22.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_8",
+          "type": "expression",
+          "expression": "Fields.OrderItemNum",
+          "format": "number:0",
+          "x": 106.0,
+          "y": 0.0,
+          "width": 11.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_5",
+          "type": "expression",
+          "expression": "Fields.RollWidth",
+          "format": "number:2",
+          "x": 118.0,
+          "y": 0.0,
+          "width": 15.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_13",
+          "type": "expression",
+          "expression": "Fields.WeightScaled",
+          "format": "number:0",
+          "x": 211.0,
+          "y": 0.0,
+          "width": 19.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_14",
+          "type": "expression",
+          "expression": "Fields.ScaledDateTime",
+          "format": "date:%d/%m/%Y %H:%M",
+          "x": 231.0,
+          "y": 0.0,
+          "width": 34.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "group_footer_1",
+      "type": "groupFooter",
+      "height": 6.0,
+      "group": "Machine",
+      "elements": [
+        {
+          "id": "fld_15",
+          "type": "expression",
+          "expression": "SUM(\"WeightScaled\")",
+          "format": "number:0",
+          "x": 211.0,
+          "y": 0.0,
+          "width": 19.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "page_footer_1",
+      "type": "pageFooter",
+      "height": 9.0,
+      "elements": [
+        {
+          "id": "rct_3",
+          "type": "rectangle",
+          "radius": 0.0,
+          "x": 0.0,
+          "y": 0.0,
+          "width": 266.0,
+          "height": 8.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "top",
+            "borderWidth": 0.5,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_17",
+          "type": "expression",
+          "expression": "\"Página de: \" +  PAGE_NUMBER() + \" de \" +  TOTAL_PAGES()",
+          "x": 96.6,
+          "y": 1.0,
+          "width": 63.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "left",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_18",
+          "type": "expression",
+          "expression": "NOW()",
+          "x": 210.9,
+          "y": 1.0,
+          "width": 53.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 10.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#000000",
+            "align": "right",
+            "verticalAlign": "middle",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        },
+        {
+          "id": "fld_19",
+          "type": "expression",
+          "expression": "Report.Title",
+          "x": 2.0,
+          "y": 1.0,
+          "width": 69.0,
+          "height": 6.0,
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 8.0,
+            "bold": false,
+            "italic": false,
+            "underline": false,
+            "color": "#AAAAAA",
+            "align": "left",
+            "verticalAlign": "bottom",
+            "borderWidth": 0.0,
+            "borderColor": "#000000",
+            "padding": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "report_footer_1",
+      "type": "reportFooter",
+      "height": 11.0,
+      "elements": []
+    }
+  ]
+}
