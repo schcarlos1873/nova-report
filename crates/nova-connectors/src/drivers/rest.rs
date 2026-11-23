@@ -58,6 +58,7 @@ impl RestProvider {
     fn new(config: ConnectionConfig) -> ConnectorResult<Self> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
+            .connect_timeout(crate::net::connect_timeout(&config))
             .user_agent("NovaReport/0.1")
             .build()
             .map_err(|e| ConnectorError::Config(e.to_string()))?;
@@ -80,8 +81,19 @@ impl RestProvider {
                 _ => req.bearer_auth(secret),
             };
         }
-        let resp = req.send().await.map_err(|e| ConnectorError::Connection(e.to_string()))?;
+        // só o caminho: a query string pode conter tokens
+        let shown = url.split('?').next().unwrap_or(&url).to_string();
+        crate::diag::info(format!("GET {shown}"));
+        let started = std::time::Instant::now();
+        let resp = req.send().await.map_err(|e| {
+            crate::diag::error(format!("Falha HTTP: {e}"));
+            ConnectorError::Connection(e.to_string())
+        })?;
         let status = resp.status();
+        crate::diag::step(
+            if status.is_success() { crate::diag::DiagLevel::Ok } else { crate::diag::DiagLevel::Error },
+            format!("HTTP {status} em {} ms", started.elapsed().as_millis()),
+        );
         if !status.is_success() {
             return Err(ConnectorError::Query(format!("HTTP {status} em {url}")));
         }
@@ -106,7 +118,7 @@ impl Driver for RestDriver {
             name: "API REST (JSON)",
             tier: "api",
             default_port: None,
-            fields: &["path", "username", "password"],
+            fields: &["path", "username", "password", "connectTimeout"],
             supports_introspection: false,
         }
     }

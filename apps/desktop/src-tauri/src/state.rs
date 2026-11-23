@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use tokio::sync::Notify;
 
 use nova_application::{ConnectionService, DocumentService, RenderService};
 use nova_engine::render::FontLibrary;
@@ -9,4 +12,6 @@ pub struct AppState {
     pub render: RenderService,
     pub connections: ConnectionService,
     pub fonts: Arc<FontLibrary>,
+    /// Testes de conexão em andamento (id da requisição → sinal de cancelamento).
+    pub pending_tests: Mutex<HashMap<String, Arc<Notify>>>,
 }

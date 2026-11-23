@@ -61,7 +61,7 @@ impl ConnectorRegistry {
         #[cfg(feature = "mysql")]
         r.register(Arc::new(drivers::mysql::MySqlDriver::default()));
         #[cfg(feature = "mssql")]
-        r.register(Arc::new(drivers::mssql::MsSqlDriver));
+        r.register(Arc::new(drivers::mssql::MsSqlDriver::default()));
         #[cfg(feature = "rest")]
         r.register(Arc::new(drivers::rest::RestDriver));
         #[cfg(feature = "odbc")]

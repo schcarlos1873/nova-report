@@ -11,15 +11,17 @@
 //! | 3 — Sidecar | contrato gRPC em `proto/connector_plugin.proto` |
 
 pub mod dialect;
+pub mod diag;
 pub mod drivers;
 pub mod error;
 mod gateway;
 mod introspect;
+pub mod net;
 pub mod params;
 pub mod registry;
 pub mod rowset;
 pub mod store;
 pub mod vault;
 
-pub use error::{ConnectorError, ConnectorResult};
+pub use error::{ConnectorError, ConnectorResult, NetErrorKind};
 pub use registry::{ConnectorRegistry, Driver, DriverInfo};

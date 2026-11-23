@@ -10,10 +10,10 @@ use nova_domain::report::ProviderKind;
 use nova_engine::data::DataProvider;
 use sqlx::mysql::{MySqlConnectOptions, MySqlPool, MySqlPoolOptions, MySqlSslMode};
 
-use super::sqlx_common::{PoolCache, sqlx_provider};
+use super::sqlx_common::{PoolCache, diagnose, probe, sqlx_provider};
 use crate::params::PlaceholderStyle;
 use crate::registry::{Driver, DriverInfo};
-use crate::{ConnectorError, ConnectorResult, introspect};
+use crate::{ConnectorError, ConnectorResult, diag, introspect, net};
 
 sqlx_provider!(MySqlProvider, MySqlPool, PlaceholderStyle::Question);
 
@@ -52,15 +52,29 @@ impl MySqlDriver {
     async fn pool(&self, config: &ConnectionConfig) -> ConnectorResult<MySqlPool> {
         let key = config.fingerprint();
         let mut pools = self.pools.lock().await;
-        if let Some(p) = pools.get(&key) {
+        // no modo diagnóstico sempre abre um pool novo para exercitar rede + login
+        if let Some(p) = pools.get(&key).filter(|_| !diag::active()) {
             return Ok(p.clone());
         }
+        let timeout = net::connect_timeout(config);
+        let mut opts = options(config)?;
+        let (host, port) = (opts.get_host().to_string(), opts.get_port());
+        let verifies_hostname = matches!(opts.get_ssl_mode(), MySqlSslMode::VerifyIdentity);
+        if let Some(ip) = probe(&host, port, opts.get_socket().is_some(), verifies_hostname, timeout).await? {
+            tracing::info!(%host, %ip, "DNS com endereços inválidos: fixando o IP que respondeu");
+            opts = opts.host(&ip.to_string());
+        }
+        diag::info(format!("MySQL {host}:{port} · timeout {} s · login…", timeout.as_secs()));
         let pool = MySqlPoolOptions::new()
             .max_connections(4)
-            .acquire_timeout(Duration::from_secs(15))
-            .connect_with(options(config)?)
+            .acquire_timeout(timeout)
+            // firewalls/NAT derrubam conexões ociosas sem avisar: renova antes disso
+            .idle_timeout(Duration::from_secs(300))
+            .max_lifetime(Duration::from_secs(1800))
+            .connect_with(opts)
             .await
-            .map_err(|e| ConnectorError::Connection(e.to_string()))?;
+            .inspect(|_| diag::ok("Login aceito"))
+            .map_err(|e| diagnose(e, &host, port, timeout, &["1045"], &["1049", "1044"]))?;
         pools.insert(key, pool.clone());
         Ok(pool)
     }
@@ -74,7 +88,7 @@ impl Driver for MySqlDriver {
             name: "MySQL / MariaDB",
             tier: "1-nativo",
             default_port: Some(3306),
-            fields: &["host", "port", "database", "username", "password", "useTls", "connectionString"],
+            fields: &["host", "port", "database", "username", "password", "useTls", "connectionString", "connectTimeout"],
             supports_introspection: true,
         }
     }

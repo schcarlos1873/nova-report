@@ -37,6 +37,7 @@ pub fn run() {
                 render: RenderService::new(registry.clone(), resolver.clone(), ReportCompiler::new(fonts.clone())),
                 connections: ConnectionService::new(registry, resolver),
                 fonts,
+                pending_tests: Default::default(),
             };
             app.manage(state);
             Ok(())
@@ -55,6 +56,8 @@ pub fn run() {
             commands::save_connection,
             commands::delete_connection,
             commands::test_database_connection,
+            commands::cancel_connection_test,
+            commands::diagnose_connection,
             commands::fetch_schema_tree,
             commands::select_all_sql,
             commands::preview_sql,

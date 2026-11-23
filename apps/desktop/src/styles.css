@@ -63,6 +63,29 @@ input, select, textarea {
   width: 100%;
 }
 input[type='checkbox'], input[type='radio'] { width: auto; }
+/* <select> sem aparência nativa: o WebKitGTK (Linux) aplica o padding do tema GTK e corta o
+   texto em alturas fixas; WebView2/WKWebView/navegadores ignoram. Seta desenhada com
+   currentColor para seguir o tema claro/escuro. */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  line-height: 1.25;
+  padding-right: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 12px) 50%, calc(100% - 8px) 50%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+select::-ms-expand { display: none; }
+select:disabled { cursor: default; }
+select option { background: var(--panel); color: var(--text); }
 input[type='color'] { width: 28px; height: 26px; padding: 1px; flex: none; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 .mono { font-family: var(--mono); font-size: 12px; }
@@ -70,6 +93,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
 .small { font-size: 11px; }
 .ok { color: var(--ok); }
 .err { color: var(--danger); }
+/* mensagem + "Dica:" do backend em linhas separadas */
+.conn-status { white-space: pre-line; max-width: 60%; overflow-wrap: anywhere; font-size: 12px; }
 .spacer { flex: 1; }
 .row { display: flex; gap: 6px; align-items: center; }
 .row.gap { gap: 12px; flex-wrap: wrap; }
@@ -119,7 +144,7 @@ kbd { font-family: var(--mono); font-size: 10px; border: 1px solid var(--border-
 .rb-btn:disabled .rb-icon { color: var(--muted); }
 .rb-label { white-space: nowrap; }
 .rb-btn.large .rb-label { font-size: 11.5px; }
-.rb-select { width: auto; padding: 2px 4px; font-size: 12px; height: 24px; }
+.rb-select { width: auto; height: 24px; padding: 3px 20px 3px 6px; font-size: 12px; line-height: 16px; background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%; }
 .rb-font { width: 150px; height: 24px; padding: 2px 6px; font-size: 12px; }
 .rb-a { text-decoration: underline; text-decoration-thickness: 3px; }
 .rb-color { display: inline-flex; align-items: center; gap: 1px; }
@@ -299,3 +324,12 @@ textarea.sql { resize: vertical; line-height: 1.4; }
 .center-cell { text-align: center !important; }
 .grow { flex: 1; }
 .img-thumb { max-width: 100%; max-height: 160px; object-fit: contain; align-self: flex-start; border: 1px solid var(--border); border-radius: 6px; background: repeating-conic-gradient(var(--panel-2) 0 25%, var(--panel) 0 50%) 0 0 / 12px 12px; }
+
+/* modo diagnóstico de conexão */
+.diag-steps { list-style: none; margin: 0; padding: 0; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; max-height: 60vh; overflow: auto; }
+.diag-steps li { display: grid; grid-template-columns: 64px 16px 1fr; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+.diag-steps .diag-t { color: var(--muted); text-align: right; }
+.diag-steps .diag-msg { white-space: pre-line; overflow-wrap: anywhere; }
+.diag-ok .diag-icon { color: var(--ok); }
+.diag-warn .diag-icon, .diag-warn .diag-msg { color: var(--warn); }
+.diag-error .diag-icon, .diag-error .diag-msg { color: var(--danger); }

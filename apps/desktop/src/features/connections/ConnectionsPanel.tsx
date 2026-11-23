@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { ConnectionProfile, DatabaseTree, DriverDescriptor, QueryPreview, TableMetadata } from '../../domain/types';
+import { useEffect, useRef, useState } from 'react';
+import type { ConnectionDiagnostics, ConnectionProfile, DatabaseTree, DriverDescriptor, QueryPreview, TableMetadata } from '../../domain/types';
 import { DataGrid, Field, Modal, NumberInput, Section, Select, TextInput, Toggle } from '../../components/ui';
 import { api } from '../../infra/api';
 import { dialogs } from '../../infra/dialogs';
@@ -68,22 +68,69 @@ function ConnectionDialog({ initial, isNew, onClose }: { initial: ConnectionProf
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<{ ok: boolean; msg: string }>();
   const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [report, setReport] = useState<ConnectionDiagnostics>();
+  const testId = useRef<string | undefined>(undefined);
   const driver: DriverDescriptor | undefined = drivers.find((d) => d.id === p.provider);
   const has = (f: string) => driver?.fields.includes(f);
   const patch = (x: Partial<ConnectionProfile>) => setP((cur) => ({ ...cur, ...x }));
 
-  const test = async () => {
+  // cronômetro do "Testando…": o usuário vê que a tentativa continua viva
+  useEffect(() => {
+    if (!busy) return;
+    const started = Date.now();
+    setElapsed(0);
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [busy]);
+
+  // fechar o diálogo no meio do teste cancela a tentativa no backend
+  useEffect(() => () => {
+    if (testId.current) void api.cancelConnectionTest(testId.current).catch(() => {});
+  }, []);
+
+  const test = (diagnose = false) => async () => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    testId.current = id;
     setBusy(true);
     setStatus(undefined);
     try {
-      const ms = await api.testConnection(p, password || undefined);
-      setStatus({ ok: true, msg: `Conectado em ${ms} ms` });
+      if (diagnose) {
+        const r = await api.diagnoseConnection(p, password || undefined, id);
+        if (testId.current !== id) return;
+        setReport(r);
+        setStatus(r.ok ? { ok: true, msg: `Conectado em ${r.elapsedMs} ms` } : { ok: false, msg: r.error ?? 'Falhou' });
+      } else {
+        const ms = await api.testConnection(p, password || undefined, id);
+        if (testId.current === id) setStatus({ ok: true, msg: `Conectado em ${ms} ms` });
+      }
     } catch (e) {
-      setStatus({ ok: false, msg: (e as Error).message });
+      if (testId.current === id) setStatus({ ok: false, msg: (e as Error).message });
     } finally {
-      setBusy(false);
+      if (testId.current === id) {
+        testId.current = undefined;
+        setBusy(false);
+      }
     }
   };
+
+  const cancelTest = () => {
+    const id = testId.current;
+    if (!id) return;
+    testId.current = undefined;
+    setBusy(false);
+    setStatus({ ok: false, msg: 'Teste de conexão cancelado.' });
+    void api.cancelConnectionTest(id).catch(() => {});
+  };
+
+  const timeoutSecs = p.options?.connectTimeout;
+  const setTimeoutSecs = (v: number) =>
+    setP((cur) => {
+      const options = { ...(cur.options ?? {}) };
+      if (v > 0 && v !== 15) options.connectTimeout = String(v);
+      else delete options.connectTimeout;
+      return { ...cur, options: Object.keys(options).length ? options : undefined };
+    });
 
   const save = async () => {
     try {
@@ -109,10 +156,18 @@ function ConnectionDialog({ initial, isNew, onClose }: { initial: ConnectionProf
       onClose={onClose}
       footer={
         <>
-          {status && <span className={status.ok ? 'ok' : 'err'}>{status.msg}</span>}
+          {status && <span className={`conn-status ${status.ok ? 'ok' : 'err'}`}>{status.msg}</span>}
+          {busy && <span className="muted">Testando… {elapsed}s</span>}
           <span className="spacer" />
           {!isNew && <button className="danger" onClick={remove}>Excluir</button>}
-          <button disabled={busy} onClick={test}>{busy ? 'Testando…' : 'Testar'}</button>
+          {busy ? (
+            <button onClick={cancelTest}>Cancelar</button>
+          ) : (
+            <>
+              <button title="Mostra cada etapa (DNS, endereços, TCP, TLS, login) com tempos" onClick={test(true)}>Diagnóstico</button>
+              <button onClick={test()}>Testar</button>
+            </>
+          )}
           <button className="primary" disabled={!p.alias.trim()} onClick={save}>Salvar</button>
         </>
       }
@@ -130,7 +185,10 @@ function ConnectionDialog({ initial, isNew, onClose }: { initial: ConnectionProf
         </Field>
         {has('host') && (
           <div className="grid2">
-            <Field label="Host"><TextInput value={p.host ?? ''} live onCommit={(v) => patch({ host: v || undefined })} /></Field>
+            <Field label="Host" hint={p.provider === 'mssql' ? 'Instância nomeada: HOST\\INSTANCIA (porta via SQL Browser)' : undefined}>
+              <TextInput value={p.host ?? ''} live onCommit={(v) => patch({ host: v || undefined })}
+                placeholder={p.provider === 'mssql' ? 'servidor ou servidor\\INSTANCIA' : ''} />
+            </Field>
             <Field label="Porta"><NumberInput value={p.port ?? driver?.defaultPort ?? 0} step={1} onCommit={(v) => patch({ port: v || undefined })} /></Field>
           </div>
         )}
@@ -167,7 +225,57 @@ function ConnectionDialog({ initial, isNew, onClose }: { initial: ConnectionProf
           </Field>
         )}
         {has('useTls') && <Toggle label="Exigir TLS/SSL" checked={p.useTls} onChange={(v) => patch({ useTls: v })} />}
+        {has('connectTimeout') && (
+          <Field label="Timeout de conexão (s)" hint="Prazo para conectar e autenticar (padrão 15 s)">
+            <NumberInput value={timeoutSecs ? Number(timeoutSecs) : 15} step={1} min={1} max={600} onCommit={(v) => setTimeoutSecs(Math.round(v))} />
+          </Field>
+        )}
       </div>
+      {report && <DiagnosticsReport report={report} onClose={() => setReport(undefined)} />}
+    </Modal>
+  );
+}
+
+const LEVEL_ICON = { info: '·', ok: '✔', warn: '⚠', error: '✖' } as const;
+
+function diagnosticsText(r: ConnectionDiagnostics) {
+  const lines = r.steps.map((s) => `[${String(s.tMs).padStart(6)} ms] ${LEVEL_ICON[s.level]} ${s.message}`);
+  return [`Diagnóstico de conexão — ${r.environment}`, `Data: ${new Date().toISOString()}`, '', ...lines].join('\n');
+}
+
+function DiagnosticsReport({ report, onClose }: { report: ConnectionDiagnostics; onClose: () => void }) {
+  const notify = useUi((s) => s.notify);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(diagnosticsText(report));
+      notify('Diagnóstico copiado', 'success');
+    } catch (e) {
+      notify(`Não foi possível copiar: ${(e as Error).message}`, 'error');
+    }
+  };
+  return (
+    <Modal
+      title={`Diagnóstico · ${report.ok ? 'conectado' : 'falhou'}`}
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <span className="muted small">{report.environment}</span>
+          <span className="spacer" />
+          <button onClick={copy}>Copiar</button>
+          <button className="primary" onClick={onClose}>Fechar</button>
+        </>
+      }
+    >
+      <ol className="diag-steps">
+        {report.steps.map((s, i) => (
+          <li key={i} className={`diag-${s.level}`}>
+            <span className="diag-t">{s.tMs} ms</span>
+            <span className="diag-icon">{LEVEL_ICON[s.level]}</span>
+            <span className="diag-msg">{s.message}</span>
+          </li>
+        ))}
+      </ol>
     </Modal>
   );
 }

@@ -12,6 +12,66 @@ use tokio::sync::Mutex;
 /// Cache de pools por fingerprint da conexão (preview rápido sem reconectar).
 pub(crate) type PoolCache<P> = Arc<Mutex<HashMap<String, P>>>;
 
+/// Sonda TCP antes de criar o pool (o sqlx tenta os endereços em sequência, sem Happy
+/// Eyeballs): devolve erro diagnosticado e, quando o DNS publica endereços inválidos e o
+/// hostname não precisa ser verificado pelo TLS, o IP que respondeu para fixar no pool.
+pub(crate) async fn probe(
+    host: &str,
+    port: u16,
+    is_socket: bool,
+    verifies_hostname: bool,
+    timeout: std::time::Duration,
+) -> crate::ConnectorResult<Option<std::net::IpAddr>> {
+    if is_socket || host.starts_with('/') {
+        return Ok(None);
+    }
+    let deadline = tokio::time::Instant::now() + timeout;
+    let c = crate::net::connect_tcp(host, port, deadline, timeout).await?;
+    let literal = host.trim_matches(['[', ']']).parse::<std::net::IpAddr>().is_ok();
+    let pin = c.dns_had_invalid && !literal && !verifies_hostname;
+    if pin {
+        crate::diag::warn(format!("DNS com endereços inválidos: o pool usará o IP {} diretamente", c.addr.ip()));
+    }
+    Ok(pin.then(|| c.addr.ip()))
+}
+
+/// Traduz erros do sqlx em mensagens com dica. `auth_codes`/`db_codes`: códigos do servidor.
+pub(crate) fn diagnose(
+    e: sqlx::Error,
+    host: &str,
+    port: u16,
+    timeout: std::time::Duration,
+    auth_codes: &[&str],
+    db_codes: &[&str],
+) -> crate::ConnectorError {
+    use crate::{ConnectorError, NetErrorKind};
+    let err = match e {
+        sqlx::Error::PoolTimedOut => crate::net::timeout_error("autenticar (TLS/login)", host, port, timeout, None),
+        sqlx::Error::Tls(err) => ConnectorError::network(
+            NetErrorKind::Tls,
+            format!("Falha no handshake TLS com {host}:{port}."),
+            Some(format!("confira o modo TLS/certificado do servidor. ({err})")),
+        ),
+        sqlx::Error::Database(db) => {
+            let code = db.code().map(|c| c.to_string()).unwrap_or_default();
+            if auth_codes.contains(&code.as_str()) {
+                ConnectorError::network(NetErrorKind::Auth, "Usuário ou senha inválidos.", Some(db.message().to_string()))
+            } else if db_codes.contains(&code.as_str()) {
+                ConnectorError::network(
+                    NetErrorKind::Database,
+                    "Banco de dados inexistente ou sem permissão.",
+                    Some(db.message().to_string()),
+                )
+            } else {
+                ConnectorError::Connection(db.to_string())
+            }
+        }
+        other => ConnectorError::Connection(other.to_string()),
+    };
+    crate::diag::error(err.to_string());
+    err
+}
+
 /// Decodifica uma célula pelo nome do tipo nativo, com fallback textual.
 pub(crate) fn decode_cell<R>(row: &R, i: usize) -> CellValue
 where

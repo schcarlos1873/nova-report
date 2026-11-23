@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use nova_application::ports::DriverDescriptor;
 use nova_application::{AppError, ExportFormat, ParameterValues, PreviewResult, QueryPreview};
+use nova_connectors::diag;
 use nova_domain::connection::{ConnectionProfile, DatabaseTree};
 use nova_domain::report::{ReportDefinition, ValidationIssue};
 use serde::Serialize;
@@ -124,9 +125,110 @@ pub async fn delete_connection(state: State<'_, AppState>, alias: String) -> Cmd
     Ok(())
 }
 
+/// Executa `fut` cancelável por `request_id` (via [`cancel_connection_test`]). Cancelar descarta
+/// o future, o que fecha o socket em andamento.
+async fn cancellable<T>(
+    state: &AppState,
+    request_id: Option<String>,
+    fut: impl std::future::Future<Output = CmdResult<T>>,
+) -> CmdResult<T> {
+    let Some(id) = request_id else {
+        return fut.await;
+    };
+    let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
+    state.pending_tests.lock().map_err(|e| AppError::Invalid(e.to_string()))?.insert(id.clone(), cancel.clone());
+    let result = tokio::select! {
+        r = fut => r,
+        _ = cancel.notified() => Err(AppError::Invalid("Teste de conexão cancelado.".into())),
+    };
+    if let Ok(mut pending) = state.pending_tests.lock() {
+        pending.remove(&id);
+    }
+    result
+}
+
 #[tauri::command]
-pub async fn test_database_connection(state: State<'_, AppState>, profile: ConnectionProfile, password: Option<String>) -> CmdResult<u64> {
-    state.connections.test(profile, password).await
+pub async fn test_database_connection(
+    state: State<'_, AppState>,
+    profile: ConnectionProfile,
+    password: Option<String>,
+    request_id: Option<String>,
+) -> CmdResult<u64> {
+    cancellable(&state, request_id, state.connections.test(profile, password)).await
+}
+
+/// Relatório do modo diagnóstico: cada etapa da tentativa de conexão com tempos.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionDiagnostics {
+    ok: bool,
+    elapsed_ms: u64,
+    error: Option<String>,
+    environment: String,
+    steps: Vec<diag::DiagStep>,
+}
+
+#[tauri::command]
+pub async fn diagnose_connection(
+    state: State<'_, AppState>,
+    profile: ConnectionProfile,
+    password: Option<String>,
+    request_id: Option<String>,
+) -> CmdResult<ConnectionDiagnostics> {
+    let environment = format!(
+        "NovaReport {} · {}/{}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+    let start = std::time::Instant::now();
+    let summary = describe(&profile);
+    // o cancelamento fica dentro da captura: as etapas já registradas são preservadas
+    let (result, steps) = diag::capture(async {
+        diag::info(summary);
+        cancellable(&state, request_id, state.connections.test(profile, password)).await
+    })
+    .await;
+    let mut steps = steps;
+    let error = result.as_ref().err().map(AppError::user_message);
+    steps.push(diag::DiagStep {
+        t_ms: start.elapsed().as_millis() as u64,
+        level: if error.is_none() { diag::DiagLevel::Ok } else { diag::DiagLevel::Error },
+        message: match &result {
+            Ok(ms) => format!("Conexão OK em {ms} ms"),
+            Err(e) => format!("Falhou: {}", e.user_message()),
+        },
+    });
+    Ok(ConnectionDiagnostics { ok: error.is_none(), elapsed_ms: start.elapsed().as_millis() as u64, error, environment, steps })
+}
+
+/// Resumo do perfil para o diagnóstico (nunca inclui a senha nem a connection string).
+fn describe(p: &ConnectionProfile) -> String {
+    let mut parts = vec![format!("Driver {:?}", p.provider).to_lowercase(), format!("alias '{}'", p.alias)];
+    if let Some(h) = &p.host {
+        parts.push(format!("host {h}{}", p.port.map(|x| format!(":{x}")).unwrap_or_default()));
+    }
+    if let Some(db) = &p.database {
+        parts.push(format!("banco {db}"));
+    }
+    if let Some(u) = &p.username {
+        parts.push(format!("usuário {u}"));
+    }
+    if let Some(path) = &p.path {
+        parts.push(format!("caminho {}", path.split('?').next().unwrap_or(path)));
+    }
+    if p.connection_string.is_some() {
+        parts.push("connection string personalizada".into());
+    }
+    parts.push(format!("TLS {}", if p.use_tls { "exigido" } else { "opcional" }));
+    parts.join(" · ")
+}
+
+#[tauri::command]
+pub fn cancel_connection_test(state: State<'_, AppState>, request_id: String) {
+    if let Some(cancel) = state.pending_tests.lock().ok().and_then(|mut p| p.remove(&request_id)) {
+        cancel.notify_one();
+    }
 }
 
 #[tauri::command]

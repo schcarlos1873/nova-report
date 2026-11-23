@@ -206,6 +206,23 @@ export interface ConnectionProfile {
   options?: Record<string, string>;
 }
 
+export type DiagLevel = 'info' | 'ok' | 'warn' | 'error';
+
+export interface DiagStep {
+  tMs: number;
+  level: DiagLevel;
+  message: string;
+}
+
+/** Relatório do modo diagnóstico de conexão. */
+export interface ConnectionDiagnostics {
+  ok: boolean;
+  elapsedMs: number;
+  error?: string;
+  environment: string;
+  steps: DiagStep[];
+}
+
 export interface DriverDescriptor {
   id: ProviderKind;
   name: string;

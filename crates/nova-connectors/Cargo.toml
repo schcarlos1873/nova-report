@@ -25,7 +25,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
 async-trait.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["net"] }
 tracing.workspace = true
 polars = { workspace = true, features = ["sql"] }
 base64.workspace = true

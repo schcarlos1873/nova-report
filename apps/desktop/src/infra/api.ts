@@ -2,6 +2,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   AppInfo,
+  ConnectionDiagnostics,
   ConnectionProfile,
   DatabaseTree,
   DriverDescriptor,
@@ -35,7 +36,11 @@ export const api = {
   listConnections: () => call<ConnectionProfile[]>('list_connections'),
   saveConnection: (profile: ConnectionProfile, password?: string) => call<void>('save_connection', { profile, password }),
   deleteConnection: (alias: string) => call<void>('delete_connection', { alias }),
-  testConnection: (profile: ConnectionProfile, password?: string) => call<number>('test_database_connection', { profile, password }),
+  testConnection: (profile: ConnectionProfile, password?: string, requestId?: string) =>
+    call<number>('test_database_connection', { profile, password, requestId }),
+  cancelConnectionTest: (requestId: string) => call<void>('cancel_connection_test', { requestId }),
+  diagnoseConnection: (profile: ConnectionProfile, password?: string, requestId?: string) =>
+    call<ConnectionDiagnostics>('diagnose_connection', { profile, password, requestId }),
   schemaTree: (alias: string) => call<DatabaseTree>('fetch_schema_tree', { alias }),
   selectAllSql: (alias: string, schema: string | undefined, table: string) => call<string>('select_all_sql', { alias, schema, table }),
   previewSql: (alias: string, sql: string, params?: Params, limit = 100) => call<QueryPreview>('preview_sql', { alias, sql, params, limit }),
